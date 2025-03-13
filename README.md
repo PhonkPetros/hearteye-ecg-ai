@@ -1,1 +1,1 @@
-# Hearteye ai project
+# HeartEye ECG AI Project
