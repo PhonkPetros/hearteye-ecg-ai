@@ -40,7 +40,8 @@ echo "Junction path (Windows): $WIN_JUNCTION"
 if [[ "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* ]]; then
     echo "Detected Windows environment. Creating directory junction using mklink /J..."
     # Create a junction using the Windows command-line tool (mklink /J)
-    cmd //c "mklink /J \"$WIN_JUNCTION\" \"$WIN_EXTERNAL_PATH\""
+    # Use PowerShell to handle the paths correctly
+    powershell.exe -Command "cmd /c mklink /J '$WIN_JUNCTION' '$WIN_EXTERNAL_PATH'"
 else
     echo "Creating symbolic link from '$EXTERNAL_DATA_PATH' to '$FULL_JUNCTION'..."
     ln -s "$EXTERNAL_DATA_PATH" "$FULL_JUNCTION"
