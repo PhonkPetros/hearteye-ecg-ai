@@ -5,9 +5,6 @@ import wfdb
 import neurokit2 as nk
 from scipy.signal import butter, filtfilt
 
-###############################################################################
-# ECGCleaner
-###############################################################################
 class ECGCleaner:
     """
     Class-based approach for cleaning/preprocessing ECG signals, 
