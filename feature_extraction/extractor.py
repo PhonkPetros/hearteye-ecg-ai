@@ -86,42 +86,6 @@ class ECGFeatureExtractor:
             # Initialize features dictionary
             features = {}
             
-            # Extract basic heart rate metrics
-            if len(r_peaks_indices) > 1:
-                # Calculate RR intervals
-                rr_intervals = np.diff(r_peaks_indices) / self.sampling_rate * 1000  # in ms
-                
-                features['RR_Interval_Mean'] = np.mean(rr_intervals)
-                features['RR_Interval_STD'] = np.std(rr_intervals)
-                features['Heart_Rate'] = 60000 / features['RR_Interval_Mean']  # Convert to BPM
-                
-                # Calculate HRV metrics if we have enough R-peaks
-                if len(r_peaks_indices) > 3:
-                    try:
-                        hrv_time = nk.hrv_time(r_peaks_indices, sampling_rate=self.sampling_rate)
-                        features['HRV_SDNN'] = hrv_time['HRV_SDNN'].values[0]
-                        features['HRV_RMSSD'] = hrv_time['HRV_RMSSD'].values[0]
-                        features['HRV_pNN50'] = hrv_time['HRV_pNN50'].values[0]
-                    except Exception as e:
-                        print(f"[WARNING] HRV calculation failed: {str(e)}")
-                        features['HRV_SDNN'] = np.nan
-                        features['HRV_RMSSD'] = np.nan
-                        features['HRV_pNN50'] = np.nan
-            else:
-                features['RR_Interval_Mean'] = np.nan
-                features['RR_Interval_STD'] = np.nan
-                features['Heart_Rate'] = np.nan
-                features['HRV_SDNN'] = np.nan
-                features['HRV_RMSSD'] = np.nan
-                features['HRV_pNN50'] = np.nan
-            
-            # ECG quality
-            try:
-                quality = nk.ecg_quality(ecg_signal, sampling_rate=self.sampling_rate)
-                features['ECG_Quality'] = np.mean(quality)
-            except Exception as e:
-                print(f"[WARNING] ECG quality calculation failed: {str(e)}")
-                features['ECG_Quality'] = np.nan
             
             # Try to extract wave features if we have enough R-peaks
             if len(r_peaks_indices) > 3:
@@ -141,8 +105,6 @@ class ECGFeatureExtractor:
                         'PQ_Interval_STD': np.nan,
                         'P_Duration_Mean': np.nan,
                         'P_Duration_STD': np.nan,
-                        'T_Duration_Mean': np.nan,
-                        'T_Duration_STD': np.nan
                     }
                     features.update(waves_dict)
             else:
@@ -156,8 +118,6 @@ class ECGFeatureExtractor:
                     'PQ_Interval_STD': np.nan,
                     'P_Duration_Mean': np.nan,
                     'P_Duration_STD': np.nan,
-                    'T_Duration_Mean': np.nan,
-                    'T_Duration_STD': np.nan
                 }
                 features.update(waves_dict)
                 
@@ -252,15 +212,6 @@ class ECGFeatureExtractor:
             features['P_Duration_Mean'] = np.nanmean(p_durations) if p_durations else np.nan
             features['P_Duration_STD'] = np.nanstd(p_durations) if p_durations else np.nan
             
-            # Extract T wave duration
-            t_durations = []
-            if 'ECG_T_Onsets' in waves and 'ECG_T_Offsets' in waves:
-                for onset, offset in zip(waves['ECG_T_Onsets'], waves['ECG_T_Offsets']):
-                    if onset is not None and offset is not None:
-                        t_durations.append((offset - onset) / self.sampling_rate * 1000)  # in ms
-            
-            features['T_Duration_Mean'] = np.nanmean(t_durations) if t_durations else np.nan
-            features['T_Duration_STD'] = np.nanstd(t_durations) if t_durations else np.nan
             
             return features
             
@@ -275,8 +226,6 @@ class ECGFeatureExtractor:
                 'PQ_Interval_STD': np.nan,
                 'P_Duration_Mean': np.nan,
                 'P_Duration_STD': np.nan,
-                'T_Duration_Mean': np.nan,
-                'T_Duration_STD': np.nan
             }
     
     def _create_empty_features(self):
@@ -297,13 +246,4 @@ class ECGFeatureExtractor:
             'PQ_Interval_STD': np.nan,
             'P_Duration_Mean': np.nan,
             'P_Duration_STD': np.nan,
-            'T_Duration_Mean': np.nan,
-            'T_Duration_STD': np.nan,
-            'RR_Interval_Mean': np.nan,
-            'RR_Interval_STD': np.nan,
-            'Heart_Rate': np.nan,
-            'ECG_Quality': np.nan,
-            'HRV_RMSSD': np.nan,
-            'HRV_SDNN': np.nan,
-            'HRV_pNN50': np.nan
         }
