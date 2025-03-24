@@ -28,3 +28,4 @@ for patients in os.listdir(base_path):
                         ecg_data.append(signals)
 
 ecg_data = np.array(ecg_data)
+np.save("C:\Users\maike\hearteye-ecg-ai\data\external\cleaned-dataset/ecg_data.npy", ecg_data)
