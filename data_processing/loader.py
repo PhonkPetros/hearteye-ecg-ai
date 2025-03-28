@@ -6,8 +6,7 @@ class ECGLoader:
     """
     Loads .hea/.dat files using WFDB, plus an optional CSV of labels.
     """
-
-    def __init__(self, base_dir, csv_path):
+    def __init__(self, base_dir, csv_path=None):
         """
         Parameters
         ----------
@@ -19,40 +18,51 @@ class ECGLoader:
         self.base_dir = base_dir
         self.csv_path = csv_path
         self.df_labels = None  # Will be loaded if needed
-
+        
     def load_csv_labels(self):
         """
         Load label info from the CSV. Adjust column names or logic as needed.
         """
-        if not os.path.exists(self.csv_path):
+        if not self.csv_path or not os.path.exists(self.csv_path):
             print(f"[WARNING] CSV path does not exist: {self.csv_path}")
             return None
+            
         print(f"[DEBUG] Loading labels from CSV: {self.csv_path}")
         self.df_labels = pd.read_csv(self.csv_path)
         print(f"[DEBUG] Loaded {len(self.df_labels)} rows from CSV.")
         return self.df_labels
-
+        
     def iter_ecg_records(self):
         """
         Generator that walks through self.base_dir, yielding (.hea_path, .dat_path).
         Skips zero-sized or missing .dat files.
         """
         print(f"[DEBUG] Scanning base directory for .hea/.dat pairs: {self.base_dir}")
+        if not os.path.exists(self.base_dir):
+            print(f"[ERROR] Base directory does not exist: {self.base_dir}")
+            return
+            
         for root, dirs, files in os.walk(self.base_dir):
             for f in files:
                 if f.lower().endswith(".hea"):
                     hea_path = os.path.join(root, f)
                     dat_path = os.path.splitext(hea_path)[0] + ".dat"
+                    
                     if not os.path.exists(dat_path):
-                        # matching .dat not found
+                        print(f"[WARNING] .dat file not found for: {hea_path}")
                         continue
+                        
                     try:
                         if os.path.getsize(hea_path) == 0 or os.path.getsize(dat_path) == 0:
+                            print(f"[WARNING] Empty file detected: {hea_path} or {dat_path}")
                             continue
-                    except OSError:
+                    except OSError as e:
+                        print(f"[ERROR] OS error with file: {e}")
                         continue
+                        
+                    print(f"[DEBUG] Found valid ECG record: {hea_path}")
                     yield (hea_path, dat_path)
-
+                    
     def load_ecg_record(self, record_base):
         """
         Loads ECG data from WFDB given the record base name (full path without extension).

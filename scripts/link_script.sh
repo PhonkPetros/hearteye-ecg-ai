@@ -1,35 +1,37 @@
 #!/bin/bash
-# Define the external data folder (adjust if needed)
-EXTERNAL_DATA_PATH="/g/Other computers/My Laptop/data"
-# Define the name for the mount inside the project's data folder
-LINK_NAME="external"
 
-# Determine the project root directory (assumes this script is in a subdirectory like 'scripts')
+EXTERNAL_DATA_PATH="/g/Other computers/My Laptop/data" #Set the correct path here
+
+if [ -z "${EXTERNAL_DATA_PATH}" ]; then
+    echo "Error: EXTERNAL_DATA_PATH is not set"
+    exit 1
+fi
+
+if [ ! -d "${EXTERNAL_DATA_PATH}" ]; then
+    echo "Error: Directory ${EXTERNAL_DATA_PATH} does not exist"
+    exit 1
+fi
+
+LINK_NAME="external"
 PROJECT_ROOT=$(dirname "$(pwd)")
-# Define the mount point as the existing 'data' folder in your project
 MOUNT_POINT="$PROJECT_ROOT/data"
 
-# Ensure the mount point exists
 if [ ! -d "$MOUNT_POINT" ]; then
     echo "The directory '$MOUNT_POINT' does not exist. Please ensure the 'data' folder exists."
     exit 1
 fi
 
-# Define the full path for the junction inside the data folder
 FULL_JUNCTION="$MOUNT_POINT/$LINK_NAME"
 
-# Remove any existing file or folder at the target location
 if [ -L "$FULL_JUNCTION" ] || [ -e "$FULL_JUNCTION" ]; then
     echo "Removing existing '$FULL_JUNCTION'..."
     rm -rf "$FULL_JUNCTION"
 fi
 
-# Convert paths to Windows format using cygpath for use with cmd
 WIN_EXTERNAL_PATH=$(cygpath -w "$EXTERNAL_DATA_PATH")
 WIN_MOUNT_POINT=$(cygpath -w "$MOUNT_POINT")
 WIN_JUNCTION="$WIN_MOUNT_POINT\\$LINK_NAME"
 
-# Debug output to verify the paths
 echo "Project root: $PROJECT_ROOT"
 echo "Mount point (data folder): $MOUNT_POINT"
 echo "Junction path (Unix): $FULL_JUNCTION"
