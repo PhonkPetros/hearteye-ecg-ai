@@ -49,8 +49,10 @@ class ECGDataset(Dataset):
         return self.max_samples
 
     def __getitem__(self, idx):
-        ecg_signal = self.x[idx].clone().detach().float()
-        label = self.y[idx].clone().detach().long()
+        # Convert the numpy array to a PyTorch tensor and then use .clone()
+        ecg_signal = torch.tensor(self.x[idx], dtype=torch.float32).clone().detach()
+        label = torch.tensor(self.y[idx]).clone().detach().to(torch.long)
+
         return ecg_signal, label
 
 
@@ -248,6 +250,7 @@ def main():
     # Save the best hyperparameters to a JSON file
     with open('best_hyperparameters.json', 'w') as f:
         json.dump(best_params, f, indent=4)
+
 
     # Once the best hyperparameters are found, train the final model on the full dataset
     final_model = load_model(class_names=["abnormal", "normal", "with arrhythmia"], 
