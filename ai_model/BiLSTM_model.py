@@ -16,7 +16,9 @@ class ECGDataGenerator(Sequence):
 
         self.max_samples = min(len(self.x), max_samples)
         self.batch_size = batch_size
-        self.indices = np.arange(self.max_samples)
+
+        # Ensure indices are int64 (needed by h5py)
+        self.indices = np.arange(self.max_samples, dtype=np.int64)
 
         self.on_epoch_end()
 
@@ -28,12 +30,20 @@ class ECGDataGenerator(Sequence):
         end_idx = min((index + 1) * self.batch_size, self.max_samples)
         batch_indices = self.indices[start_idx:end_idx]
 
-        batch_x = self.x[batch_indices]
-        batch_y = self.y[batch_indices]
+        batch_x = np.empty((len(batch_indices), self.x.shape[1], self.x.shape[2]), dtype=self.x.dtype)
+        batch_y = np.empty((len(batch_indices),), dtype=self.y.dtype)
 
-        batch_x = np.transpose(batch_x, (0, 2, 1))  # (batch, 5000, 12)
+        for i, idx in enumerate(batch_indices):
+            batch_x[i] = self.x[idx]
+            batch_y[i] = self.y[idx]
+
+        batch_x = np.transpose(batch_x, (0, 2, 1))  # Reshape to (batch_size, 5000, 12)
 
         return batch_x, batch_y
+
+
+
+
 
     def on_epoch_end(self):
         np.random.shuffle(self.indices)
@@ -52,10 +62,10 @@ def get_model(num_classes):
 
 
 if __name__ == "__main__":
-    # File paths (change to your actual paths)
-    train_file = 'D:/Maike/ecg_train.h5'
-    val_file = 'D:/Maike/ecg_val.h5'
-    test_file = 'D:/Maike/ecg_test.h5'
+    # File paths
+    train_file = 'C:/Users/maike/hearteye/train_data.h5'
+    val_file = 'C:/Users/maike/hearteye/val_data.h5'
+    test_file = 'C:/Users/maike/hearteye/test_data.h5'
 
     signal_dset = 'ecg_data'
     label_dset = 'labels'
