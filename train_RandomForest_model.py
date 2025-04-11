@@ -1,11 +1,13 @@
 import pandas as pd
-from sklearn.model_selection import train_test_split, RandomizedSearchCV
+from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
 from sklearn.ensemble import RandomForestClassifier
 from imblearn.over_sampling import RandomOverSampler
 import matplotlib.pyplot as plt
 import numpy as np
+import optuna
+
 
 # === Load files ===
 features_df = pd.read_csv("data/external/ecg_features_with_header.csv")
@@ -40,42 +42,45 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=
 ros = RandomOverSampler(random_state=42)
 X_train_balanced, y_train_balanced = ros.fit_resample(X_train, y_train)
 
-print("\U0001F4CA Balanced class distribution in training set:")
+print("Balanced class distribution in training set:")
 print(pd.Series(y_train_balanced).value_counts())
 
 # === Hyperparameter tuning for Random Forest ===
-param_dist = {
-    'n_estimators': [100, 200, 300, 500],
-    'max_depth': [None, 10, 20, 30, 50],
-    'min_samples_split': [2, 5, 10],
-    'min_samples_leaf': [1, 2, 4],
-    'max_features': ['sqrt', 'log2', None],
-    'bootstrap': [True, False]
-}
 
-rf_search = RandomizedSearchCV(
-    estimator=RandomForestClassifier(random_state=42),
-    param_distributions=param_dist,
-    n_iter=50,
-    cv=3,
-    verbose=2,
-    scoring='accuracy',
-    n_jobs=-1,
-    random_state=42
-)
+def objective(trial):
+    params = {
+        'n_estimators': trial.suggest_int('n_estimators', 100, 500),
+        'max_depth': trial.suggest_int('max_depth', 10, 50),
+        'min_samples_split': trial.suggest_int('min_samples_split', 2, 10),
+        'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 4),
+        'max_features': trial.suggest_categorical('max_features', ['sqrt', 'log2', None]),
+        'bootstrap': trial.suggest_categorical('bootstrap', [True, False]),
+        'random_state': 42,
+        'n_jobs': -1
+    }
 
-rf_search.fit(X_train_balanced, y_train_balanced)
-best_rf = rf_search.best_estimator_
+    clf = RandomForestClassifier(**params)
+    score = cross_val_score(clf, X_train_balanced, y_train_balanced, cv=3, scoring='accuracy').mean()
+    return score
 
-# === Evaluate best RF model ===
+# Run the optimization
+study = optuna.create_study(direction='maximize')
+study.optimize(objective, n_trials=50, show_progress_bar=True)
+
+# Retrieve best parameters and fit the final model
+print("Best hyperparameters:", study.best_params)
+best_rf = RandomForestClassifier(**study.best_params, random_state=42)
+best_rf.fit(X_train_balanced, y_train_balanced)
+
+# # === Evaluate best RF model ===
 rf_pred = best_rf.predict(X_test)
-print("\U0001F3AF Random Forest (Hyperparameter Tuned):\n", classification_report(y_test, rf_pred, target_names=label_encoder.classes_))
+print("Random Forest (Hyperparameter Tuned):\n", classification_report(y_test, rf_pred, target_names=label_encoder.classes_))
 
 # === Confusion Matrix ===
 cm_rf = confusion_matrix(y_test, rf_pred)
 disp_rf = ConfusionMatrixDisplay(confusion_matrix=cm_rf, display_labels=label_encoder.classes_)
 disp_rf.plot(cmap="Blues", xticks_rotation=45)
-plt.title("\U0001F9E0 Random Forest (Tuned) - Confusion Matrix")
+plt.title("Random Forest (Tuned) - Confusion Matrix")
 plt.grid(False)
 plt.tight_layout()
 plt.show()
