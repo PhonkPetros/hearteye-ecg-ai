@@ -1,39 +1,68 @@
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import classification_report
+from sklearn.ensemble import RandomForestClassifier
+import xgboost as xgb
+from imblearn.over_sampling import RandomOverSampler
+import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import GridSearchCV
+from xgboost import XGBClassifier
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import TensorDataset, DataLoader
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, confusion_matrix
-import pandas as pd
 import numpy as np
 from sklearn.utils.class_weight import compute_class_weight
 
 
-# === Load Data ===
+# === Load files ===
 features_df = pd.read_csv("data/external/ecg_features_with_header.csv")
-metadata_df = pd.read_csv("data/external/cleaned-dataset/final_labeled_and_cleaned_metadata.csv")
+metadata_df = pd.read_csv("data/external/cleaned-dataset/labeled_and_cleaned_metadata.csv")
 
-# === Clean and Merge ===
+# === Clean study_id columns and filter for labeled rows
+# ✅ Strip the 's' prefix to match label file
 features_df["study_id"] = features_df["study_id"].astype(str).str.extract(r'(\d+)$')[0]
 metadata_df["study_id"] = metadata_df["study_id"].astype(str)
 valid_labels = metadata_df[metadata_df["label"].notna()]
 merged_df = pd.merge(features_df, valid_labels, on="study_id")
 
-
-# === Encode Labels ===
-from sklearn.preprocessing import LabelEncoder
+# === Encode labels ===
 label_encoder = LabelEncoder()
 merged_df["label_encoded"] = label_encoder.fit_transform(merged_df["label"])
 
-# === Features & Labels ===
-non_feature_cols = ['record_id', 'patient_id', 'study_id', 'file_path', 'file_path.1', 'gender', 'label', 'label_encoded', 'original_path', 'cleaned_path']
-numeric_features = [col for col in merged_df.columns if col not in non_feature_cols and pd.api.types.is_numeric_dtype(merged_df[col])]
-X = merged_df[numeric_features].fillna(merged_df[numeric_features].mean())
+# === Select feature columns ===
+non_feature_cols = ['record_id', 'patient_id', 'study_id', 'file_path', 'gender',
+                    'label', 'label_encoded', 'original_path', 'cleaned_path']
+numeric_features = [
+    col for col in merged_df.columns
+    if col not in non_feature_cols and pd.api.types.is_numeric_dtype(merged_df[col])
+]
+
+
+non_feature_cols = ['record_id', 'patient_id', 'study_id', 'file_path', 'gender',
+                    'label', 'label_encoded', 'original_path', 'cleaned_path']
+
+numeric_features = [
+    col for col in merged_df.columns
+    if col not in non_feature_cols and pd.api.types.is_numeric_dtype(merged_df[col])
+]
+
+
+X = merged_df[numeric_features]
+X = X.loc[:, X.isna().mean() <= 0.3]  # Drop columns with too many NaNs
+X = X.fillna(X.mean())
 y = merged_df["label_encoded"]
 
-# === Train-Test Split ===
-from sklearn.model_selection import train_test_split
+
+# === Stratified Train-Test Split ===
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
+
 
 # === Scale Features ===
 scaler = StandardScaler()
@@ -48,7 +77,7 @@ y_test_tensor = torch.tensor(y_test.values, dtype=torch.long)
 
 train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
 test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
-train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
+train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=256)
 
 # === Define Neural Net ===
@@ -58,16 +87,16 @@ class ECGNet(nn.Module):
         self.model = nn.Sequential(
             nn.Linear(input_size, 512),
             nn.BatchNorm1d(512),
-            nn.ReLU(),
+            nn.LeakyReLU(0.1),
             nn.Dropout(0.5),  # increased dropout
 
             nn.Linear(512, 256),
             nn.BatchNorm1d(256),
-            nn.ReLU(),
+            nn.LeakyReLU(0.1),
             nn.Dropout(0.4),
 
             nn.Linear(256, 128),
-            nn.ReLU(),
+            nn.LeakyReLU(0.1),
             nn.Dropout(0.3),
 
             nn.Linear(128, num_classes)
@@ -84,16 +113,15 @@ model.to(device)
 class_weights = compute_class_weight('balanced', classes=np.unique(y_train), y=y_train)
 weights_tensor = torch.tensor(class_weights, dtype=torch.float32).to(device)
 
-
-optimizer = optim.Adam(model.parameters(), lr=0.0005)  # slightly lower LR
+optimizer = optim.Adam(model.parameters(), lr=0.0005, weight_decay=1e-5) 
 scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.5)
 
 
 # === Training ===
 criterion = nn.CrossEntropyLoss(weight=weights_tensor)
-optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-for epoch in range(300):  # longer training
+
+for epoch in range(20):  # longer training
     model.train()
     running_loss = 0.0
     for xb, yb in train_loader:
@@ -122,6 +150,7 @@ with torch.no_grad():
 print("\n📊 Classification Report (Neural Net):")
 print(classification_report(y_test, y_pred, target_names=label_encoder.classes_))
 
+
 # Optional: Confusion Matrix
 import matplotlib.pyplot as plt
 from sklearn.metrics import ConfusionMatrixDisplay
@@ -132,8 +161,12 @@ plt.title("🧠 Neural Net - Confusion Matrix")
 plt.tight_layout()
 plt.show()
 
-# === Debug: Data coverage
-print("🧾 Total ECG feature rows:", len(features_df))
-print("🧾 Total labeled rows:", len(valid_labels))
-print("📛 Rows after merge:", len(merged_df))
-print("🔍 Label distribution:\n", merged_df["label"].value_counts())
+
+
+print("🧾 Total rows in features file:", len(features_df))
+print("🧾 Total rows in labeled file:", len(metadata_df))
+print("📛 Total rows after merging with labels:", len(merged_df))
+print("✅ Rows used for training:", len(X_train))
+print("✅ Rows used for testing:", len(X_test))
+print("🔍 Label distribution after merge:\n", merged_df['label'].value_counts())
+
