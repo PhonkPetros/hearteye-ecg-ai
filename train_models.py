@@ -8,8 +8,7 @@ from imblearn.over_sampling import RandomOverSampler
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import GridSearchCV
-from xgboost import XGBClassifier
+
 
 import torch
 import torch.nn as nn
@@ -17,9 +16,10 @@ import torch.optim as optim
 from torch.utils.data import TensorDataset, DataLoader
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, confusion_matrix
-import pandas as pd
 import numpy as np
 from sklearn.utils.class_weight import compute_class_weight
+
+
 
 
 # === Load files ===
@@ -63,6 +63,69 @@ y = merged_df["label_encoded"]
 
 # === Stratified Train-Test Split ===
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
+
+
+# === Balance Training Set ===
+ros = RandomOverSampler(random_state=42)
+X_train_balanced, y_train_balanced = ros.fit_resample(X_train, y_train)
+
+# Confirm new class distribution
+print("📊 Balanced class distribution in training set:")
+print(pd.Series(y_train_balanced).value_counts())
+
+# === Model 1: Random Forest ===
+rf = RandomForestClassifier(random_state=42)
+rf.fit(X_train_balanced, y_train_balanced)
+rf_pred = rf.predict(X_test)
+print("🎯 Random Forest (Balanced):\n", classification_report(y_test, rf_pred, target_names=label_encoder.classes_))
+
+# === Confusion Matrix: Random Forest
+cm_rf = confusion_matrix(y_test, rf_pred)
+disp_rf = ConfusionMatrixDisplay(confusion_matrix=cm_rf, display_labels=label_encoder.classes_)
+disp_rf.plot(cmap="Blues", xticks_rotation=45)
+plt.title("🧠 Random Forest - Confusion Matrix")
+plt.grid(False)
+plt.tight_layout()
+#plt.show()
+
+
+
+# === Model 2: XGBoost ===
+xgb_model = xgb.XGBClassifier(objective="multi:softprob", eval_metric="mlogloss", random_state=42)
+xgb_model.fit(X_train_balanced, y_train_balanced)
+xgb_pred = xgb_model.predict(X_test)
+print("🔥 XGBoost (Balanced):\n", classification_report(y_test, xgb_pred, target_names=label_encoder.classes_))
+
+# === Confusion Matrix: XGBoost
+cm_xgb = confusion_matrix(y_test, xgb_pred)
+disp_xgb = ConfusionMatrixDisplay(confusion_matrix=cm_xgb, display_labels=label_encoder.classes_)
+disp_xgb.plot(cmap="Oranges", xticks_rotation=45)
+plt.title("⚡ XGBoost - Confusion Matrix")
+plt.grid(False)
+plt.tight_layout()
+#plt.show()
+
+
+
+from sklearn.naive_bayes import GaussianNB
+
+# === Model 3: Naive Bayes ===
+bayes_model = GaussianNB()
+bayes_model.fit(X_train_balanced, y_train_balanced)
+bayes_pred = bayes_model.predict(X_test)
+print("🧪 Naive Bayes (Balanced):\n", classification_report(y_test, bayes_pred, target_names=label_encoder.classes_))
+
+# === Confusion Matrix: Naive Bayes ===
+cm_bayes = confusion_matrix(y_test, bayes_pred)
+disp_bayes = ConfusionMatrixDisplay(confusion_matrix=cm_bayes, display_labels=label_encoder.classes_)
+disp_bayes.plot(cmap="Purples", xticks_rotation=45)
+plt.title("🧠 Naive Bayes - Confusion Matrix")
+plt.grid(False)
+plt.tight_layout()
+#plt.show()
+
+
+
 
 
 # === Scale Features ===
@@ -122,7 +185,7 @@ scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.5)
 criterion = nn.CrossEntropyLoss(weight=weights_tensor)
 
 
-for epoch in range(20):  # longer training
+for epoch in range(200):  # longer training
     model.train()
     running_loss = 0.0
     for xb, yb in train_loader:
@@ -151,6 +214,7 @@ with torch.no_grad():
 print("\n📊 Classification Report (Neural Net):")
 print(classification_report(y_test, y_pred, target_names=label_encoder.classes_))
 
+
 # Optional: Confusion Matrix
 import matplotlib.pyplot as plt
 from sklearn.metrics import ConfusionMatrixDisplay
@@ -160,6 +224,10 @@ disp.plot(cmap='Purples')
 plt.title("🧠 Neural Net - Confusion Matrix")
 plt.tight_layout()
 plt.show()
+
+
+
+
 
 
 
