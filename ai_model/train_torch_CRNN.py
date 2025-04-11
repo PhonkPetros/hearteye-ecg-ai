@@ -10,8 +10,9 @@ from torch_ecg.models.ecg_crnn import ECG_CRNN
 from torch_ecg.model_configs import ECG_CRNN_CONFIG
 from torch_ecg.utils.utils_nn import adjust_cnn_filter_lengths
 from optuna.integration.pytorch_lightning import PyTorchLightningPruningCallback
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
 from pytorch_lightning.callbacks import EarlyStopping
+from optuna.pruners import HyperbandPruner
 import torch.nn.functional as F
 import json
 
@@ -70,16 +71,16 @@ def load_model(class_names, n_leads, dropout):
     return model
 
 # Create dataloaders function
-def create_dataloaders(train_file, val_file, test_file, batch_size=32, max_samples=None):
+def create_dataloaders(train_file, val_file, test_file, batch_size=32, max_samples=None, num_workers=4):
     # Load datasets
     train_dataset = ECGDataset(train_file, 'ecg_data', 'labels', max_samples=max_samples)
     val_dataset = ECGDataset(val_file, 'ecg_data', 'labels', max_samples=max_samples)
     test_dataset = ECGDataset(test_file, 'ecg_data', 'labels', max_samples=max_samples)
     
     # Create DataLoaders
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
     return train_loader, val_loader, test_loader
 
@@ -88,7 +89,7 @@ def objective(trial):
     # Hyperparameter tuning
     lr = trial.suggest_float('lr', 1e-5, 1e-1, log=True)
     batch_size = trial.suggest_categorical('batch_size', [16, 32, 64, 128])
-    dropout = trial.suggest_float('dropout', 0.2, 0.5)
+    dropout = trial.suggest_float('dropout', 0.0, 0.5)
 
     # Load class weights from the training data
     class_weights = get_class_weights(train_file, 'ecg_data', 'labels')
@@ -97,28 +98,30 @@ def objective(trial):
     model = load_model(class_names=["abnormal", "normal", "with arrhythmia"], n_leads=12, dropout=dropout)
     
     # Create DataLoader
-    train_loader, val_loader, _ = create_dataloaders(train_file, val_file, test_file, batch_size=batch_size, max_samples=1000)
+    train_loader, val_loader, _ = create_dataloaders(train_file, val_file, test_file, batch_size=batch_size, max_samples=5000)
     
     # Initialize model for PyTorch Lightning
     ecg_model = ECGModel(model, class_weights=class_weights)
     
-    # Define optimizer with learning rate from Optuna trial
-    optimizer = torch.optim.Adam(ecg_model.parameters(), lr=lr)
-
-    # Trainer setup with pruning callback and early stopping
+    # Define early stopping callback
     early_stop_callback = EarlyStopping(
-        monitor="val_loss", patience=3, mode="min", verbose=True
+        monitor="val_loss", patience=5, mode="min", verbose=True
     )
+
+    # Define the pruning callback, which integrates HyperbandPruner
+    pruning_callback = PyTorchLightningPruningCallback(trial, monitor="val_loss")
     
+    # Add the callbacks to the trainer
     callbacks = [early_stop_callback]
+      # Only add pruning callback if a valid pruner is set
     if isinstance(trial.study.pruner, optuna.pruners.BasePruner):
         pruning_callback = PyTorchLightningPruningCallback(trial, monitor="val_loss")
         if isinstance(pruning_callback, pl.callbacks.Callback):
             callbacks.append(pruning_callback)
-
+    
     # Trainer setup with pruning callback
     trainer = pl.Trainer(
-        max_epochs=10,
+        max_epochs=15,
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
         devices=1,
         callbacks=callbacks
@@ -127,8 +130,10 @@ def objective(trial):
     # Train the model
     trainer.fit(ecg_model, train_loader, val_loader)
 
-    # Return the validation loss to Optuna
-    return trainer.callback_metrics["val_loss"].item()
+    # Return the validation accuracy to Optuna (instead of loss)
+    val_accuracy = trainer.callback_metrics["val_accuracy"].item()
+    return val_accuracy
+
 
 # Function to calculate class weights
 def get_class_weights(train_file, signal_dset, label_dset):
@@ -158,7 +163,7 @@ class ECGModel(pl.LightningModule):
         
         # Apply class weights during loss calculation
         if self.class_weights is not None:
-            loss = F.cross_entropy(y_hat, y, weight=self.class_weights)
+            loss = F.cross_entropy(y_hat, y, weight=self.class_weights.to(self.device))
         else:
             loss = F.cross_entropy(y_hat, y)
 
@@ -175,7 +180,7 @@ class ECGModel(pl.LightningModule):
         y_hat = self(x)
         
         if self.class_weights is not None:
-            val_loss = F.cross_entropy(y_hat, y, weight=self.class_weights)
+            val_loss = F.cross_entropy(y_hat, y, weight=self.class_weights.to(self.device))
         else:
             val_loss = F.cross_entropy(y_hat, y)
         
@@ -195,7 +200,7 @@ class ECGModel(pl.LightningModule):
         
         # Apply class weights during loss calculation
         if self.class_weights is not None:
-            test_loss = F.cross_entropy(y_hat, y, weight=self.class_weights)
+            test_loss = F.cross_entropy(y_hat, y, weight=self.class_weights.to(self.device))
         else:
             test_loss = F.cross_entropy(y_hat, y)
         
@@ -216,18 +221,22 @@ class ECGModel(pl.LightningModule):
         avg_test_loss = torch.stack(self.test_losses).mean()
         self.log("avg_test_loss", avg_test_loss)
 
-        # Calculate all the metrics at the end of the test phase
-        accuracy = accuracy_score(self.all_labels, self.all_preds)
-        f1 = f1_score(self.all_labels, self.all_preds, average='weighted')
-        precision = precision_score(self.all_labels, self.all_preds, average='weighted')
-        recall = recall_score(self.all_labels, self.all_preds, average='weighted')
+        # Calculate confusion matrix and classification report
+        cm = confusion_matrix(self.all_labels, self.all_preds)
+        report = classification_report(self.all_labels, self.all_preds, target_names=["abnormal", "normal", "with arrhythmia"])
 
-        # Log all metrics
-        self.log("test_accuracy", accuracy)
-        self.log("test_f1", f1)
-        self.log("test_precision", precision)
-        self.log("test_recall", recall)
+        # Log metrics
+        self.log("test_loss", avg_test_loss)
+        self.log("confusion_matrix", cm)
+        self.log("classification_report", report)
 
+        # You can optionally print it for easier readability
+        print("Confusion Matrix:")
+        print(cm)
+        print("\nClassification Report:")
+        print(report)
+
+        # Clear stored predictions and labels for the next epoch
         self.all_preds.clear()
         self.all_labels.clear()
         self.test_losses.clear()
@@ -240,8 +249,9 @@ def main():
     set_seed(42)  # Set the seed for reproducibility
 
     # Optuna study setup
-    study = optuna.create_study(direction="minimize")
-    study.optimize(objective, n_trials=20)  # Run 20 trials 
+    pruner = HyperbandPruner(min_resource=32, max_resource=1024, reduction_factor=3)
+    study = optuna.create_study(direction="maximize", pruner=pruner)
+    study.optimize(objective, n_trials=30)  # Run 20 trials 
 
     # Print and log the best hyperparameters
     best_params = study.best_params
@@ -257,19 +267,21 @@ def main():
                              n_leads=12, dropout=best_params['dropout'])
     class_weights = get_class_weights(train_file, 'ecg_data', 'labels')
     train_loader, val_loader, test_loader = create_dataloaders(train_file, val_file, test_file, 
-                                                               batch_size=best_params['batch_size'], max_samples=None)
+                                                               batch_size=best_params['batch_size'], max_samples=None, num_workers=4)
 
     # Final training using the best hyperparameters with early stopping
     early_stop_callback = EarlyStopping(
-        monitor="val_loss", patience=3, mode="min", verbose=True
+        monitor="val_loss", patience=5, mode="min", verbose=True
     )
     ecg_model = ECGModel(final_model, class_weights=class_weights, lr=best_params['lr'])
 
     trainer = pl.Trainer(
         max_epochs=20,
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
-        devices=1,
-        callbacks=[early_stop_callback])
+        devices="auto",
+        callbacks=[early_stop_callback],
+        strategy="ddp"
+        )
     trainer.fit(ecg_model, train_loader, val_loader)
     trainer.test(ecg_model, dataloaders=test_loader)
 
