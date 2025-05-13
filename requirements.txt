@@ -1,0 +1,14 @@
+Flask
+flask-cors
+numpy
+pandas
+wfdb
+neurokit2
+PyWavelets
+scipy
+matplotlib
+scikit-learn
+imbalanced-learn
+optuna
+gunicorn
+Flask-JWT-Extended
