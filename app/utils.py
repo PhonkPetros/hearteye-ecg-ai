@@ -219,19 +219,44 @@ def plot_waveform_diagram(signal, fs, rpeaks, waves, title=None, filename="wavef
     plt.close(fig)
     logging.info(f"Waveform diagram saved to: {filename}")
 
-def analyze_wfdb_and_plot_summary(wfdb_basename, plot_folder, file_id):
-    intervals = {k: None for k in PLAUSIBLE_RANGES}
-    plot_path = None
-    try:
-        signals, fs = read_wfdb_record(wfdb_basename)
-        lead = select_best_lead(signals)
-        sig = signals[:, lead] if signals.ndim > 1 else signals
-        df, rpeaks = process_ecg_custom_clean(sig, fs)
-        waves = updated_extract_waves(df)
-        intervals = compute_intervals(waves, fs)
-        os.makedirs(plot_folder, exist_ok=True)
-        plot_path = os.path.join(plot_folder, f"{file_id}_waveform_diagram.png")
-        plot_waveform_diagram(df['ECG_Clean'].values, fs, rpeaks, waves, title=file_id, filename=plot_path)
-    except Exception as e:
-        logging.exception(f"Analysis failed for {wfdb_basename}: {e}")
-    return intervals, plot_path
+def analyze_and_plot(wfdb_basename, plot_folder, file_id):
+    """
+    Analyze a WFDB record and generate a plot.
+    
+    Args:
+        wfdb_basename (str): Base path of the WFDB record
+        plot_folder (str): Directory to save the plot
+        file_id (str): Unique identifier for the record
+        
+    Returns:
+        tuple: (summary dict, plot path)
+    """
+    # Read the WFDB record
+    signals, fs = read_wfdb_record(wfdb_basename)
+    
+    # Select the best lead
+    lead_idx = select_best_lead(signals)
+    raw_signal = signals[:, lead_idx] if signals.ndim > 1 else signals
+    
+    # Process the ECG signal
+    df, rpeaks = process_ecg_custom_clean(raw_signal, fs)
+    
+    # Extract wave features
+    waves = updated_extract_waves(df)
+    
+    # Compute intervals
+    intervals = compute_intervals(waves, fs)
+    
+    # Generate plot
+    plot_path = os.path.join(plot_folder, f"{file_id}.png")
+    plot_waveform_diagram(df['ECG_Clean'].values, fs, rpeaks, waves, 
+                         title=f"ECG Analysis - {file_id}", 
+                         filename=plot_path)
+    
+    # Create summary
+    summary = {
+        'heart_rate': int(round(60 * fs / np.median(np.diff(rpeaks)))) if len(rpeaks) > 1 else None,
+        'intervals': intervals
+    }
+    
+    return summary, plot_path
