@@ -12,3 +12,6 @@ imbalanced-learn
 optuna
 gunicorn
 Flask-JWT-Extended
+Flask-SQLAlchemy
+psycopg2-binary
+Flask-Migrate
