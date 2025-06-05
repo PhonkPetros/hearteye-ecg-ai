@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_APP=run.py
+      - FLASK_ENV=development
+      - DATABASE_URL=postgresql://hearteye:hearteye@db:5432/hearteye
+      - JWT_SECRET_KEY=your-secret-key-here
+      - UPLOAD_DIR=/app/uploads
+      - WFDB_DIR=/app/wfdb
+      - PLOTS_DIR=/app/plots
+    volumes:
+      - .:/app:delegated
+      - hearteye_uploads:/app/uploads
+      - hearteye_wfdb:/app/wfdb
+      - hearteye_plots:/app/plots
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - hearteye-network
+    restart: unless-stopped
+
+  db:
+    image: postgres:15
+    environment:
+      - POSTGRES_USER=hearteye
+      - POSTGRES_PASSWORD=hearteye
+      - POSTGRES_DB=hearteye
+    ports:
+      - "5432:5432"
+    volumes:
+      - hearteye_postgres:/var/lib/postgresql/data
+    networks:
+      - hearteye-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hearteye"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  pgadmin:
+    image: dpage/pgadmin4
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@admin.com
+      - PGADMIN_DEFAULT_PASSWORD=admin
+      - PGADMIN_SERVER_JSON_FILE=/pgadmin4/servers.json
+    ports:
+      - "5050:80"
+    volumes:
+      - ./pgadmin-servers.json:/pgadmin4/servers.json:ro
+      - hearteye_pgadmin:/var/lib/pgadmin
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - hearteye-network
+    restart: unless-stopped
+
+networks:
+  hearteye-network:
+    driver: bridge
+
+volumes:
+  hearteye_postgres:
+  hearteye_uploads:
+  hearteye_wfdb:
+  hearteye_plots:
+  hearteye_pgadmin: 
