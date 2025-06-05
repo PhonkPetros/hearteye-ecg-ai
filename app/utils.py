@@ -260,3 +260,31 @@ def analyze_and_plot(wfdb_basename, plot_folder, file_id):
     }
     
     return summary, plot_path
+
+def load_and_clean_all_leads(rec_dir):
+    if not os.path.isdir(rec_dir):
+        raise FileNotFoundError("Record files missing")
+
+    hea = next((f for f in os.listdir(rec_dir) if f.lower().endswith('.hea')), None)
+    if not hea:
+        raise FileNotFoundError("No .hea found in record directory")
+
+    wfdb_basename = os.path.join(rec_dir, os.path.splitext(hea)[0])
+    signals, fs = read_wfdb_record(wfdb_basename)
+    record = wfdb.rdrecord(wfdb_basename, physical=True)
+    lead_names = record.sig_name if record.sig_name else [f"Lead {i}" for i in range(signals.shape[1])]
+
+    # Clean all leads independently
+    if signals.ndim == 1:
+        cleaned_signals = custom_clean_ecg_wideband(signals, fs)
+        cleaned_signals = cleaned_signals.reshape(-1, 1)  # keep 2D shape
+    else:
+        cleaned_signals = np.column_stack([
+            custom_clean_ecg_wideband(signals[:, i], fs) for i in range(signals.shape[1])
+        ])
+
+    return {
+        'fs': fs,
+        'lead_names': lead_names,
+        'cleaned_signals': cleaned_signals
+    }

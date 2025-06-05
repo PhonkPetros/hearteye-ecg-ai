@@ -29,7 +29,8 @@ class ECG(db.Model):
     file_id = db.Column(db.String(36), unique=True, nullable=False)  # UUID
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     patient_name = db.Column(db.String(100), nullable=True)
-    age = db.Column(db.Integer, nullable=True)  # Added age field
+    age = db.Column(db.Integer, nullable=True)
+    gender = db.Column(db.String(1), nullable=True)
     upload_date = db.Column(db.DateTime, default=datetime.utcnow)
     heart_rate = db.Column(db.Integer, nullable=True)
     p_wave_duration = db.Column(db.Integer, nullable=True)  # in ms
@@ -50,6 +51,7 @@ class ECG(db.Model):
             'file_id': self.file_id,
             'patient_name': self.patient_name or '',
             'age': self.age,
+            'gender': self.gender,
             'upload_date': self.upload_date.isoformat() if self.upload_date else None,
             'heart_rate': self.heart_rate,
             'intervals': {

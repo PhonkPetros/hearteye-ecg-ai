@@ -3,7 +3,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 import os, uuid, zipfile, shutil, logging
 from datetime import datetime
 
-from ..utils import analyze_and_plot
+from ..utils import analyze_and_plot, load_and_clean_all_leads
 from ..models import db, ECG, User
 
 wfdb_bp = Blueprint('wfdb', __name__)
@@ -48,6 +48,7 @@ def upload_wfdb():
         patient_name = request.form.get('patient_name')
         age = request.form.get('age')
         age = int(age) if age and age.isdigit() else None
+        gender = request.form.get('gender')
         
         # Create ECG record in database with null handling
         ecg = ECG(
@@ -55,6 +56,7 @@ def upload_wfdb():
             user_id=user_id,
             patient_name=patient_name,
             age=age,
+            gender=gender,
             heart_rate=summary.get('heart_rate'),
             p_wave_duration=summary.get('intervals', {}).get('P_wave_duration_ms'),
             pq_interval=summary.get('intervals', {}).get('PQ_interval_ms'),
@@ -140,3 +142,36 @@ def analyze_wfdb(file_id):
 @wfdb_bp.route('/plots/<filename>')
 def serve_plot(filename):
     return send_from_directory(current_app.config['PLOTS_DIR'], filename)
+
+@wfdb_bp.route('/ecg/<file_id>/leads', methods=['GET'])
+@jwt_required()
+def get_ecg_leads(file_id):
+    user_id = int(get_jwt_identity())
+    ecg = ECG.query.filter_by(file_id=file_id, user_id=user_id).first()
+    if not ecg:
+        return jsonify({'error': 'Record not found'}), 404
+
+    try:
+        data = load_and_clean_all_leads(ecg.wfdb_path)
+        return jsonify({
+            'fs': data['fs'],
+            'leads': data['lead_names'],
+            'signals': data['cleaned_signals'].T.tolist(),
+            'patient_name': ecg.patient_name,
+            'age': ecg.age,
+            'gender': ecg.gender,
+            'upload_date': ecg.upload_date,
+            'p_wave_duration': ecg.p_wave_duration,
+            'pq_interval': ecg.pq_interval,
+            'qrs_duration': ecg.qrs_duration,
+            'qt_interval': ecg.qt_interval,
+            'classification': ecg.classification,
+            'confidence': ecg.confidence,
+            'notes': ecg.notes,
+        }), 200
+
+    except FileNotFoundError as e:
+        return jsonify({'error': str(e)}), 404
+    except Exception as e:
+        logger.exception(f"Failed to load cleaned ECG leads for {file_id}")
+        return jsonify({'error': f"Failed to load ECG leads: {e}"}), 500
