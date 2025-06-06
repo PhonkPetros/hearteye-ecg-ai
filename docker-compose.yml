@@ -1,20 +1,37 @@
 version: '3.8'
 
 services:
+  # Nginx reverse proxy for routing
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - backend
+      - pgadmin
+    networks:
+      - hearteye-network
+    restart: unless-stopped
+
   backend:
     build:
       context: .
       dockerfile: Dockerfile
-    ports:
-      - "5000:5000"
+    expose:
+      - "5000"
     environment:
       - FLASK_APP=run.py
-      - FLASK_ENV=development
+      - FLASK_ENV=production
       - DATABASE_URL=postgresql://hearteye:hearteye@db:5432/hearteye
       - JWT_SECRET_KEY=your-secret-key-here
       - UPLOAD_DIR=/app/uploads
       - WFDB_DIR=/app/wfdb
       - PLOTS_DIR=/app/plots
+      - MPLCONFIGDIR=/tmp/matplotlib
     volumes:
       - .:/app:delegated
       - hearteye_uploads:/app/uploads
@@ -33,8 +50,8 @@ services:
       - POSTGRES_USER=hearteye
       - POSTGRES_PASSWORD=hearteye
       - POSTGRES_DB=hearteye
-    ports:
-      - "5432:5432"
+    expose:
+      - "5432"
     volumes:
       - hearteye_postgres:/var/lib/postgresql/data
     networks:
@@ -52,8 +69,9 @@ services:
       - PGADMIN_DEFAULT_EMAIL=admin@admin.com
       - PGADMIN_DEFAULT_PASSWORD=admin
       - PGADMIN_SERVER_JSON_FILE=/pgadmin4/servers.json
-    ports:
-      - "5050:80"
+      - SCRIPT_NAME=/admin
+    expose:
+      - "80"
     volumes:
       - ./pgadmin-servers.json:/pgadmin4/servers.json:ro
       - hearteye_pgadmin:/var/lib/pgadmin
@@ -73,4 +91,5 @@ volumes:
   hearteye_uploads:
   hearteye_wfdb:
   hearteye_plots:
-  hearteye_pgadmin: 
+  hearteye_pgadmin:
+  nginx_logs: 
