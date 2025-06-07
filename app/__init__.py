@@ -12,21 +12,16 @@ from .config import Config
 from .models import db
 from .routes.auth import auth_bp
 from .routes.wfdb import wfdb_bp
+from .routes.health import health_bp
 
 # Initialize extensions
 jwt = JWTManager()
 migrate = Migrate()
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    stream=sys.stdout,
-    format='%(asctime)s %(levelname)s %(name)s: %(message)s'
-)
 logger = logging.getLogger(__name__)
 
 # Application factory
 def create_app():
-    logger.info("Starting create_app()")
     app = Flask(__name__)
     
     # Load config from Config class directly
@@ -42,6 +37,6 @@ def create_app():
 
     app.register_blueprint(auth_bp, url_prefix='/auth')
     app.register_blueprint(wfdb_bp)
+    app.register_blueprint(health_bp)
 
-    logger.info("Flask app created successfully")
     return app
