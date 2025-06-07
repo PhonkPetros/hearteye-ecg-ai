@@ -9,7 +9,7 @@ class User(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
-    password_hash = db.Column(db.String(256))
+    password_hash = db.Column(db.String(256), nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
@@ -26,7 +26,7 @@ class ECG(db.Model):
     __tablename__ = 'ecgs'
     
     id = db.Column(db.Integer, primary_key=True)
-    file_id = db.Column(db.String(36), unique=True, nullable=False)  # UUID
+    file_id = db.Column(db.String(20), unique=True, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     patient_name = db.Column(db.String(100), nullable=True)
     age = db.Column(db.Integer, nullable=True)
@@ -63,5 +63,12 @@ class ECG(db.Model):
             'classification': self.classification or '',
             'confidence': self.confidence,
             'notes': self.notes or '',
-            'plot_url': f'/plots/{self.file_id}.png' if self.plot_path else None
+            'wfdb_path': self.wfdb_path,
+            'plot_path': self.plot_path
         }
+
+def generate_ecg_file_id():
+    today_str = datetime.utcnow().strftime('%Y%m%d')
+    count_today = ECG.query.filter(ECG.file_id.like(f"ECG-{today_str}-%")).count()
+    next_number = count_today + 1
+    return f"ECG-{today_str}-{next_number:04d}"

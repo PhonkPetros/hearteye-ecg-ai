@@ -8,6 +8,15 @@ from scipy.signal import find_peaks
 import matplotlib
 matplotlib.use('Agg')  # non-interactive backend
 import matplotlib.pyplot as plt
+from flask import current_app
+from storage3.exceptions import StorageApiError
+
+
+def get_supabase():
+    supabase = getattr(current_app, "supabase", None)
+    if supabase is None:
+        raise RuntimeError("Supabase client not initialized. Use within Flask app context.")
+    return supabase
 
 # Configure logging
 logging.basicConfig(level=logging.INFO,
@@ -288,3 +297,40 @@ def load_and_clean_all_leads(rec_dir):
         'lead_names': lead_names,
         'cleaned_signals': cleaned_signals
     }
+
+def upload_file_to_supabase(local_path: str, storage_path: str, bucket_name="ecg-data") -> str:
+    supabase = get_supabase()
+    with open(local_path, "rb") as f:
+        res = supabase.storage.from_(bucket_name).upload(
+            path=storage_path,
+            file=f,
+            file_options={"upsert": "true"}
+        )
+    
+   # Instead of checking dict keys, check attributes
+    if hasattr(res, "path") and res.path:
+        return res.path
+    else:
+        raise Exception(f"Upload failed, response: {res}")
+
+
+
+def generate_signed_url_from_supabase(storage_path: str, bucket_name="ecg-data", expires_in=3600):
+    storage_path = storage_path.lstrip('/')  # Remove leading slash
+    if storage_path.startswith("app/"):
+        storage_path = storage_path[4:]  # Remove 'app/' prefix
+    try:
+        supabase = get_supabase() 
+        res = supabase.storage.from_(bucket_name).create_signed_url(storage_path, expires_in)
+        return res["signedURL"]
+    except StorageApiError as e:
+        logging.warning(f"Could not generate signed URL for {storage_path}: {e}")
+        return None
+
+
+def get_signed_urls_for_ecg(ecg):
+    supabase = get_supabase()
+    bucket_name = "ecg-data"
+    signed_wfdb_url = supabase.storage.from_(bucket_name).create_signed_url(ecg.wfdb_path, expires_in=3600)['signedURL']
+    signed_plot_url = supabase.storage.from_(bucket_name).create_signed_url(ecg.plot_path, expires_in=3600)['signedURL']
+    return signed_wfdb_url, signed_plot_url
