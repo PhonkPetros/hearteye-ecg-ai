@@ -10,6 +10,7 @@ from .config import Config
 from .models import db
 from .routes.auth import auth_bp
 from .routes.wfdb import wfdb_bp
+from .routes.health import health_bp
 
 # Initialize extensions
 jwt = JWTManager()
@@ -65,6 +66,7 @@ def create_app():
     # Register blueprints
     app.register_blueprint(auth_bp, url_prefix='/auth')
     app.register_blueprint(wfdb_bp)
+    app.register_blueprint(health_bp)
 
     # Create database tables and update schema
     with app.app_context():
