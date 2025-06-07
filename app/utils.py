@@ -248,8 +248,6 @@ def compute_intervals_fixed_reference(waves, fs, rpeaks=None):
             if len(valid_qrs) > 0:
                 qrs_onset = valid_qrs[0]
                 pq = (qrs_onset - p_onset) * conv
-                logging.error(f"PQ candidate: {pq} ms (p_onset: {p_onset}, qrs_onset: {qrs_onset})")
-
                 if 80 <= pq <= 350:  # physiological range including abnormal ones
                     pq_intervals.append(pq)
 
