@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from scipy.signal import find_peaks
+import scipy.signal as signal
 import logging
 import os
 import wfdb
@@ -239,7 +240,7 @@ def compute_intervals_fixed_reference(waves, fs, rpeaks=None):
             intervals['P_wave_duration_ms'] = int(round(np.median(p_durations)))
     
     # PQ interval (P onset to QRS onset)
-    qrs_onsets = waves.get('ECG_QRS_Onsets', np.array([]))
+    qrs_onsets = waves.get('ECG_R_Onsets', np.array([]))
     if len(p_onsets) > 0 and len(qrs_onsets) > 0:
         pq_intervals = []
         for p_onset in p_onsets:
@@ -247,14 +248,16 @@ def compute_intervals_fixed_reference(waves, fs, rpeaks=None):
             if len(valid_qrs) > 0:
                 qrs_onset = valid_qrs[0]
                 pq = (qrs_onset - p_onset) * conv
-                if 120 <= pq <= 200:  # Normal range
+                logging.error(f"PQ candidate: {pq} ms (p_onset: {p_onset}, qrs_onset: {qrs_onset})")
+
+                if 80 <= pq <= 350:  # physiological range including abnormal ones
                     pq_intervals.append(pq)
-        
+
         if pq_intervals:
             intervals['PQ_interval_ms'] = int(round(np.median(pq_intervals)))
     
     # QRS duration
-    qrs_offsets = waves.get('ECG_QRS_Offsets', np.array([]))
+    qrs_offsets = waves.get('ECG_R_Offsets', np.array([]))
     if len(qrs_onsets) > 0 and len(qrs_offsets) > 0:
         qrs_durations = []
         for onset in qrs_onsets:
@@ -334,8 +337,8 @@ def extract_physionet_features_fixed(signals, fs, lead_names):
         }
         
         # Calculate relative timings from fixed reference
-        p_duration = intervals.get('P_wave_duration_ms', 84)  # Use measured or default
-        pq_interval = intervals.get('PQ_interval_ms', 122)   # Closer to your expected 162
+        p_duration = intervals.get('P_wave_duration_ms', 84)
+        pq_interval = intervals.get('PQ_interval_ms', 122)  
         qrs_duration = intervals.get('QRS_duration_ms', 84)  
         qt_interval = intervals.get('QT_interval_ms', 342)   
         
@@ -344,7 +347,7 @@ def extract_physionet_features_fixed(signals, fs, lead_names):
         features['qrs_end'] = features['qrs_onset'] + qrs_duration
         features['t_end'] = features['qrs_onset'] + qt_interval
         
-        return features
+        return features, intervals
         
     except Exception as e:
         logging.error(f"Error extracting PhysioNet features: {e}")
@@ -364,7 +367,7 @@ def analyze_and_plot_12_lead_fixed(wfdb_basename, plot_folder, file_id):
         lead_names = record.sig_name if record.sig_name else [f"Lead_{i}" for i in range(signals.shape[1])]
         
         # Extract features with all fixes
-        physionet_features = extract_physionet_features_fixed(signals, fs, lead_names)
+        physionet_features, intervals = extract_physionet_features_fixed(signals, fs, lead_names)
         
         # Rest of your plotting code remains the same
         lead_idx = select_best_lead(signals)
@@ -381,12 +384,12 @@ def analyze_and_plot_12_lead_fixed(wfdb_basename, plot_folder, file_id):
         
         summary = {
             'physionet_features': physionet_features,
+            'intervals': intervals,
             'heart_rate': int(round(60 * fs / np.median(np.diff(rpeaks)))) if len(rpeaks) > 1 else None,
             'lead_count': signals.shape[1],
             'best_lead': lead_names[lead_idx],
             'sampling_rate': fs
         }
-        
         return summary, plot_path
         
     except Exception as e:
