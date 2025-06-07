@@ -406,7 +406,7 @@ def read_wfdb_record(wfdb_basename):
         record = wfdb.rdrecord(wfdb_basename, physical=True)
         signals = record.p_signal
         fs = record.fs
-        return signals, fs
+        return signals, fs, record
     except Exception as e:
         logging.error(f"Error reading WFDB record {wfdb_basename}: {e}")
         raise
