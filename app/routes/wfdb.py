@@ -233,3 +233,25 @@ def get_ecg_leads(file_id):
     except Exception as e:
         logger.exception(f"Failed to load ECG leads for {file_id}")
         return jsonify({'error': f"Failed to load ECG leads: {e}"}), 500
+
+@wfdb_bp.route('/api/ecg/<file_id>/notes', methods=['PUT'])
+@jwt_required()
+def update_ecg_notes(file_id):
+    user_id = int(get_jwt_identity())
+    ecg = ECG.query.filter_by(file_id=file_id, user_id=user_id).first()
+
+    if not ecg:
+        return jsonify({'error': 'Record not found'}), 404
+
+    data = request.get_json()
+    if not data or 'notes' not in data:
+        return jsonify({'error': 'Missing notes in request body'}), 400
+
+    try:
+        ecg.notes = data['notes']
+        db.session.commit()
+        return jsonify({'message': 'Notes updated successfully', 'notes': ecg.notes}), 200
+    except Exception as e:
+        current_app.logger.exception(f"Failed to update notes for {file_id}")
+        db.session.rollback()
+        return jsonify({'error': f'Failed to update notes: {str(e)}'}), 500
