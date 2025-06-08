@@ -1,18 +1,26 @@
 import numpy as np
 import pandas as pd
-from scipy import signal
 from scipy.signal import find_peaks
+import scipy.signal as signal
 import logging
 import os
 import wfdb
 import neurokit2 as nk
 import matplotlib.pyplot as plt
+from flask import current_app
 from matplotlib.patches import Rectangle
+from storage3.exceptions import StorageApiError
 
-# Key fixes to add to your existing code:
+def get_supabase():
+    """
+    Initializes supabase client
+    """
+    supabase = getattr(current_app, "supabase", None)
+    if supabase is None:
+        raise RuntimeError("Supabase initialization failed.")
+    return supabase
 
-# 1. GROUP DELAY COMPENSATION CONSTANTS
-# These compensate for filter and wavelet transform delays at 500Hz
+# Compensate for filter and wavelet transform delays at 500Hz
 DELAY_COMPENSATION = {
     'P_wave': 8,      # 8 samples = 16ms at 500Hz
     'QRS': 5,         # 5 samples = 10ms at 500Hz  
@@ -50,7 +58,7 @@ def compensate_group_delay(waves, fs=500):
     
     return compensated
 
-# 2. ROBUST AXIS CALCULATION WITH MULTI-LEAD FALLBACK
+# ROBUST AXIS CALCULATION WITH MULTI-LEAD FALLBACK
 def calculate_robust_ecg_axis(signals, fs, lead_names):
     """
     Enhanced axis calculation with fallback strategies and signal quality checks
@@ -202,7 +210,7 @@ def calculate_axis_with_fallback(lead_amplitudes, wave_type='qrs_amplitude'):
     
     return None
 
-# 3. IMPROVED INTERVAL CALCULATION WITH FIXED REFERENCE
+# IMPROVED INTERVAL CALCULATION WITH FIXED REFERENCE
 def compute_intervals_fixed_reference(waves, fs, rpeaks=None):
     """
     Compute intervals with fixed reference points matching PhysioNet format
@@ -232,7 +240,7 @@ def compute_intervals_fixed_reference(waves, fs, rpeaks=None):
             intervals['P_wave_duration_ms'] = int(round(np.median(p_durations)))
     
     # PQ interval (P onset to QRS onset)
-    qrs_onsets = waves.get('ECG_QRS_Onsets', np.array([]))
+    qrs_onsets = waves.get('ECG_R_Onsets', np.array([]))
     if len(p_onsets) > 0 and len(qrs_onsets) > 0:
         pq_intervals = []
         for p_onset in p_onsets:
@@ -240,14 +248,14 @@ def compute_intervals_fixed_reference(waves, fs, rpeaks=None):
             if len(valid_qrs) > 0:
                 qrs_onset = valid_qrs[0]
                 pq = (qrs_onset - p_onset) * conv
-                if 120 <= pq <= 200:  # Normal range
+                if 80 <= pq <= 350:  # physiological range including abnormal ones
                     pq_intervals.append(pq)
-        
+
         if pq_intervals:
             intervals['PQ_interval_ms'] = int(round(np.median(pq_intervals)))
     
     # QRS duration
-    qrs_offsets = waves.get('ECG_QRS_Offsets', np.array([]))
+    qrs_offsets = waves.get('ECG_R_Offsets', np.array([]))
     if len(qrs_onsets) > 0 and len(qrs_offsets) > 0:
         qrs_durations = []
         for onset in qrs_onsets:
@@ -285,7 +293,7 @@ def compute_intervals_fixed_reference(waves, fs, rpeaks=None):
     
     return intervals
 
-# 4. UPDATED EXTRACT PHYSIONET FEATURES
+# EXTRACT PHYSIONET FEATURES
 def extract_physionet_features_fixed(signals, fs, lead_names):
     """
     Extract features matching PhysioNet format with all fixes applied
@@ -327,8 +335,8 @@ def extract_physionet_features_fixed(signals, fs, lead_names):
         }
         
         # Calculate relative timings from fixed reference
-        p_duration = intervals.get('P_wave_duration_ms', 84)  # Use measured or default
-        pq_interval = intervals.get('PQ_interval_ms', 122)   # Closer to your expected 162
+        p_duration = intervals.get('P_wave_duration_ms', 84)
+        pq_interval = intervals.get('PQ_interval_ms', 122)  
         qrs_duration = intervals.get('QRS_duration_ms', 84)  
         qt_interval = intervals.get('QT_interval_ms', 342)   
         
@@ -337,7 +345,7 @@ def extract_physionet_features_fixed(signals, fs, lead_names):
         features['qrs_end'] = features['qrs_onset'] + qrs_duration
         features['t_end'] = features['qrs_onset'] + qt_interval
         
-        return features
+        return features, intervals
         
     except Exception as e:
         logging.error(f"Error extracting PhysioNet features: {e}")
@@ -347,12 +355,6 @@ def extract_physionet_features_fixed(signals, fs, lead_names):
             'p_axis': None, 'qrs_axis': None, 't_axis': None
         }
 
-# 5. REPLACE YOUR EXISTING FUNCTIONS
-# Replace calculate_ecg_axis with calculate_robust_ecg_axis
-# Replace compute_intervals_enhanced with compute_intervals_fixed_reference  
-# Replace extract_physionet_features with extract_physionet_features_fixed
-
-# 6. MAIN PROCESSING UPDATE
 def analyze_and_plot_12_lead_fixed(wfdb_basename, plot_folder, file_id):
     """
     Fixed version of analyze_and_plot_12_lead with all corrections
@@ -363,7 +365,7 @@ def analyze_and_plot_12_lead_fixed(wfdb_basename, plot_folder, file_id):
         lead_names = record.sig_name if record.sig_name else [f"Lead_{i}" for i in range(signals.shape[1])]
         
         # Extract features with all fixes
-        physionet_features = extract_physionet_features_fixed(signals, fs, lead_names)
+        physionet_features, intervals = extract_physionet_features_fixed(signals, fs, lead_names)
         
         # Rest of your plotting code remains the same
         lead_idx = select_best_lead(signals)
@@ -380,12 +382,12 @@ def analyze_and_plot_12_lead_fixed(wfdb_basename, plot_folder, file_id):
         
         summary = {
             'physionet_features': physionet_features,
+            'intervals': intervals,
             'heart_rate': int(round(60 * fs / np.median(np.diff(rpeaks)))) if len(rpeaks) > 1 else None,
             'lead_count': signals.shape[1],
             'best_lead': lead_names[lead_idx],
             'sampling_rate': fs
         }
-        
         return summary, plot_path
         
     except Exception as e:
@@ -397,14 +399,12 @@ def analyze_and_plot_12_lead_fixed(wfdb_basename, plot_folder, file_id):
         }
         return {'physionet_features': default_features, 'error': str(e)}, None
 
-# MISSING FUNCTION IMPLEMENTATIONS
-
 def read_wfdb_record(wfdb_basename):
     """
     Read a WFDB record and return signals, sampling frequency, and record info
     """
     try:
-        record = wfdb.rdrecord(wfdb_basename)
+        record = wfdb.rdrecord(wfdb_basename, physical=True)
         signals = record.p_signal
         fs = record.fs
         return signals, fs, record
@@ -418,7 +418,6 @@ def select_best_lead(signals):
     """
     if signals.shape[1] == 1:
         return 0
-    
     # Calculate signal quality metrics for each lead
     quality_scores = []
     for i in range(signals.shape[1]):
@@ -597,3 +596,47 @@ def load_and_clean_all_leads(wfdb_path):
     except Exception as e:
         logging.error(f"Error in load_and_clean_all_leads for path {wfdb_path}: {e}", exc_info=True)
         raise
+
+def upload_file_to_supabase(local_path: str, storage_path: str, bucket_name="ecg-data") -> str:
+    """
+    Uploads a file to supabase bucket
+    """
+    supabase = get_supabase()
+    with open(local_path, "rb") as f:
+        res = supabase.storage.from_(bucket_name).upload(
+            path=storage_path,
+            file=f,
+            file_options={"upsert": "true"}
+        )
+    
+   # Verify upload success
+    if hasattr(res, "path") and res.path:
+        return res.path
+    else:
+        raise Exception(f"Upload failed, response: {res}")
+
+def generate_signed_url_from_supabase(storage_path: str, bucket_name="ecg-data", expires_in=3600):
+    """
+    Generates a signed url to add data to supabase bucket
+    """
+    storage_path = storage_path.lstrip('/')  # Remove leading slash
+    if storage_path.startswith("app/"):
+        storage_path = storage_path[4:]  # Remove 'app/' prefix
+    try:
+        supabase = get_supabase() 
+        res = supabase.storage.from_(bucket_name).create_signed_url(storage_path, expires_in)
+        return res["signedURL"]
+    except StorageApiError as e:
+        logging.warning(f"Could not generate signed URL for {storage_path}: {e}")
+        return None
+
+
+def get_signed_urls_for_ecg(ecg):
+    """
+    Creates a signed url for supabase to retrieve ecg files
+    """
+    supabase = get_supabase()
+    bucket_name = "ecg-data"
+    signed_wfdb_url = supabase.storage.from_(bucket_name).create_signed_url(ecg.wfdb_path, expires_in=3600)['signedURL']
+    signed_plot_url = supabase.storage.from_(bucket_name).create_signed_url(ecg.plot_path, expires_in=3600)['signedURL']
+    return signed_wfdb_url, signed_plot_url
