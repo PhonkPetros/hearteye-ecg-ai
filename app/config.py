@@ -3,8 +3,7 @@ import os
 from datetime import timedelta
 
 class Config:
-    JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=1)
-    JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=1)
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', 'postgresql://hearteye:hearteye@localhost:5432/hearteye')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     CORS_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:3000').split(',')
