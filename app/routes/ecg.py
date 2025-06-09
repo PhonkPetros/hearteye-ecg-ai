@@ -1,6 +1,7 @@
+import logging
 from flask import Blueprint, request, jsonify, send_from_directory, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
-import os, uuid, zipfile, shutil, logging
+import os, uuid, zipfile, shutil
 from datetime import datetime
 from tempfile import TemporaryDirectory
 from ..utils import (
@@ -18,11 +19,12 @@ import requests
 ecg_bp = Blueprint("ecg", __name__)
 logger = logging.getLogger(__name__)
 
-
 def validate_upload_file(file):
     if file is None:
+        logger.warning("File part missing in upload")
         raise ValueError("No file part")
     if not file.filename.lower().endswith(".zip"):
+        logger.warning(f"Invalid file extension: {file.filename}")
         raise ValueError("ZIP required")
 
 
@@ -144,27 +146,39 @@ def cleanup_files(*paths):
 def predict_wfdb():
     user_id = int(get_jwt_identity())
     file_id = generate_ecg_file_id()
+    logger.info("ECG predict request received", extra={"user_id": user_id, "file_id": file_id})
 
     try:
         file = request.files.get("file")
         validate_upload_file(file)
+        logger.info("File validated successfully", extra={"filename": file.filename, "file_id": file_id})
 
         rec_dir = save_and_extract_zip(file, file_id)
+        logger.info("Zip file saved and extracted", extra={"rec_dir": rec_dir, "file_id": file_id})
+
         convert_edf_files(rec_dir)
+        logger.info("EDF files converted", extra={"rec_dir": rec_dir, "file_id": file_id})
 
         hea_file = ensure_hea_exists(rec_dir)
+        logger.info(".hea file found", extra={"hea_file": hea_file, "file_id": file_id})
+
         clean_non_wfdb_files(rec_dir)
+        logger.info("Cleaned non-WFDB files", extra={"rec_dir": rec_dir, "file_id": file_id})
 
         wfdb_zip_path = create_wfdb_zip(rec_dir, file_id)
         wfdb_storage_path, _ = upload_zip_to_storage(wfdb_zip_path, file_id)
+        logger.info("WFDB zip uploaded to storage", extra={"wfdb_storage_path": wfdb_storage_path, "file_id": file_id})
 
         wfdb_basename = os.path.join(rec_dir, os.path.splitext(hea_file)[0])
         summary, plot_path = analyze_ecg_and_plot(wfdb_basename, file_id)
+        logger.info("ECG analyzed and plot generated", extra={"file_id": file_id})
 
         plot_storage_path, plot_public_url = upload_plot(plot_path, file_id)
+        logger.info("Plot uploaded to storage", extra={"plot_storage_path": plot_storage_path, "file_id": file_id})
 
         patient_name, age, gender, notes = extract_metadata(request.form)
         summary = predict_summary(summary, age, gender)
+        logger.info("Summary prediction done", extra={"summary": summary, "file_id": file_id})
 
         ecg_record = save_ecg_record(
             file_id,
@@ -177,8 +191,10 @@ def predict_wfdb():
             wfdb_storage_path,
             plot_storage_path,
         )
+        logger.info("ECG record saved in DB", extra={"ecg_record_id": ecg_record.id, "file_id": file_id})
 
         cleanup_files(rec_dir, wfdb_zip_path, plot_path)
+        logger.info("Temporary files cleaned up", extra={"file_id": file_id})
 
         return (
             jsonify(
@@ -193,7 +209,7 @@ def predict_wfdb():
         )
 
     except Exception as e:
-        logger.exception("WFDB analysis failed on predict")
+        logger.exception("WFDB analysis failed on predict", exc_info=e)
         cleanup_files(
             rec_dir if "rec_dir" in locals() else None,
             wfdb_zip_path if "wfdb_zip_path" in locals() else None,
@@ -206,18 +222,18 @@ def predict_wfdb():
 @jwt_required()
 def get_record(file_id):
     user_id = int(get_jwt_identity())
-    ecg = ECG.query.filter_by(file_id=file_id, user_id=user_id).first()
+    logger.info("Get record request", extra={"user_id": user_id, "file_id": file_id})
 
+    ecg = ECG.query.filter_by(file_id=file_id, user_id=user_id).first()
     if not ecg:
+        logger.warning("Record not found", extra={"file_id": file_id, "user_id": user_id})
         return jsonify({"error": "Record not found"}), 404
 
-    # Get plot URL
     plot_url = generate_signed_url_from_supabase(ecg.plot_path)
-
-    # Get record data
     record_data = ecg.to_dict()
     record_data["plot_url"] = plot_url
 
+    logger.info("Record data retrieved successfully", extra={"file_id": file_id, "user_id": user_id})
     return jsonify(record_data), 200
 
 
@@ -226,14 +242,14 @@ def get_record(file_id):
 def history():
     user_id = int(get_jwt_identity())
     search = request.args.get("search", "").lower()
+    logger.info("History request", extra={"user_id": user_id, "search": search})
 
-    # Query records from database
     query = ECG.query.filter_by(user_id=user_id)
     if search:
         query = query.filter(ECG.patient_name.ilike(f"%{search}%"))
 
     records = query.order_by(ECG.upload_date.desc()).all()
-
+    logger.info(f"Found {len(records)} records", extra={"user_id": user_id})
     return jsonify([record.to_dict() for record in records]), 200
 
 
@@ -241,8 +257,11 @@ def history():
 @jwt_required()
 def get_ecg_leads(file_id):
     user_id = int(get_jwt_identity())
+    logger.info("Get ECG leads request", extra={"user_id": user_id, "file_id": file_id})
+
     ecg = ECG.query.filter_by(file_id=file_id, user_id=user_id).first()
     if not ecg:
+        logger.warning("Record not found", extra={"file_id": file_id, "user_id": user_id})
         return jsonify({"error": "Record not found"}), 404
 
     try:
@@ -259,35 +278,34 @@ def get_ecg_leads(file_id):
 
             data = load_and_clean_all_leads(temp_dir)
 
-        return (
-            jsonify(
-                {
-                    "fs": data["fs"],
-                    "leads": data["lead_names"],
-                    "signals": data["cleaned_signals"].T.tolist(),
-                    "patient_name": ecg.patient_name,
-                    "age": ecg.age,
-                    "gender": ecg.gender,
-                    "upload_date": ecg.upload_date,
-                    "p_wave_duration": ecg.p_wave_duration,
-                    "pq_interval": ecg.pq_interval,
-                    "qrs_duration": ecg.qrs_duration,
-                    "qt_interval": ecg.qt_interval,
-                    "classification": ecg.classification,
-                    "confidence": ecg.confidence,
-                    "notes": ecg.notes,
-                }
-            ),
-            200,
-        )
+        logger.info("ECG leads data loaded", extra={"file_id": file_id, "user_id": user_id})
+        return jsonify(
+            {
+                "fs": data["fs"],
+                "leads": data["lead_names"],
+                "signals": data["cleaned_signals"].T.tolist(),
+                "patient_name": ecg.patient_name,
+                "age": ecg.age,
+                "gender": ecg.gender,
+                "upload_date": ecg.upload_date,
+                "p_wave_duration": ecg.p_wave_duration,
+                "pq_interval": ecg.pq_interval,
+                "qrs_duration": ecg.qrs_duration,
+                "qt_interval": ecg.qt_interval,
+                "classification": ecg.classification,
+                "confidence": ecg.confidence,
+                "notes": ecg.notes,
+            }
+        ), 200
 
     except requests.HTTPError as e:
-        logger.error(f"Failed to download ECG zip: {e}")
+        logger.error(f"Failed to download ECG zip: {e}", exc_info=e)
         return jsonify({"error": "Failed to download ECG zip file"}), 500
     except FileNotFoundError as e:
+        logger.warning(f"File not found during leads extraction: {e}")
         return jsonify({"error": str(e)}), 404
     except Exception as e:
-        logger.exception(f"Failed to load ECG leads for {file_id}")
+        logger.exception(f"Failed to load ECG leads for {file_id}", exc_info=e)
         return jsonify({"error": f"Failed to load ECG leads: {e}"}), 500
 
 
@@ -295,23 +313,24 @@ def get_ecg_leads(file_id):
 @jwt_required()
 def update_ecg_notes(file_id):
     user_id = int(get_jwt_identity())
-    ecg = ECG.query.filter_by(file_id=file_id, user_id=user_id).first()
+    logger.info("Update ECG notes request", extra={"user_id": user_id, "file_id": file_id})
 
+    ecg = ECG.query.filter_by(file_id=file_id, user_id=user_id).first()
     if not ecg:
+        logger.warning("Record not found for notes update", extra={"file_id": file_id, "user_id": user_id})
         return jsonify({"error": "Record not found"}), 404
 
     data = request.get_json()
     if not data or "notes" not in data:
+        logger.warning("Missing notes in request body", extra={"user_id": user_id, "file_id": file_id})
         return jsonify({"error": "Missing notes in request body"}), 400
 
     try:
         ecg.notes = data["notes"]
         db.session.commit()
-        return (
-            jsonify({"message": "Notes updated successfully", "notes": ecg.notes}),
-            200,
-        )
+        logger.info("Notes updated successfully", extra={"file_id": file_id, "user_id": user_id})
+        return jsonify({"message": "Notes updated successfully", "notes": ecg.notes}), 200
     except Exception as e:
-        current_app.logger.exception(f"Failed to update notes for {file_id}")
+        logger.exception(f"Failed to update notes for {file_id}", exc_info=e)
         db.session.rollback()
         return jsonify({"error": f"Failed to update notes: {str(e)}"}), 500

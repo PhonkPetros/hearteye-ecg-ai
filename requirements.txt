@@ -21,3 +21,4 @@ Flask-Migrate
 python-dotenv
 supabase
 pyedflib
+python-json-logger

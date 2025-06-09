@@ -7,7 +7,7 @@ from supabase import create_client, Client
 import os
 import logging
 import sys
-
+from pythonjsonlogger import jsonlogger
 from .config import Config
 from .models import db
 from .routes.auth import auth_bp
@@ -18,12 +18,19 @@ from .routes.health import health_bp
 jwt = JWTManager()
 migrate = Migrate()
 
-logger = logging.getLogger(__name__)
-
-
 # Application factory
 def create_app():
     app = Flask(__name__)
+
+    logger = logging.getLogger()
+    if not logger.hasHandlers():
+        logHandler = logging.StreamHandler()
+        formatter = jsonlogger.JsonFormatter(
+            '%(asctime)s %(levelname)s %(name)s %(message)s %(pathname)s %(lineno)d'
+        )
+        logHandler.setFormatter(formatter)
+        logger.addHandler(logHandler)
+        logger.setLevel(logging.INFO)
 
     # Load config from Config class directly
     config = {key: getattr(Config, key) for key in dir(Config) if key.isupper()}
