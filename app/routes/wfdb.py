@@ -3,7 +3,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 import os, uuid, zipfile, shutil, logging
 from datetime import datetime
 from tempfile import TemporaryDirectory
-from ..utils import analyze_and_plot, load_and_clean_all_leads, upload_file_to_supabase, generate_signed_url_from_supabase
+from ..utils import analyze_and_plot, load_and_clean_all_leads, upload_file_to_supabase, generate_signed_url_from_supabase, convert_edf_to_wfdb
 from ..models import db, ECG, User, generate_ecg_file_id
 import requests
 
@@ -41,12 +41,24 @@ def upload_wfdb():
     # Cleanup temp zip if you want
     os.remove(temp_path)
 
+    # Check if file is wfdb format 
     hea = next((fn for fn in os.listdir(rec_dir) if fn.lower().endswith('.hea')), None)
     if not hea:
-        shutil.rmtree(rec_dir, ignore_errors=True)
-        return jsonify({'error': 'No .hea found'}), 400
+        edf_file = next((fn for fn in os.listdir(rec_dir) if fn.lower().endswith('.edf')), None) # Check if file is edf file
+        if not edf_file:
+            shutil.rmtree(rec_dir, ignore_errors=True)
+            return jsonify({'error': 'No .hea or .edf file found'}), 400
 
-    wfdb_basename = os.path.join(rec_dir, os.path.splitext(hea)[0])
+        try:
+            edf_path = os.path.join(rec_dir, edf_file)
+            wfdb_basename = convert_edf_to_wfdb(edf_path, rec_dir)
+        except Exception as e:
+            shutil.rmtree(rec_dir, ignore_errors=True)
+            return jsonify({'error': f'EDF conversion failed: {e}'}), 500
+
+    else:
+        wfdb_basename = os.path.join(rec_dir, os.path.splitext(hea)[0])
+
     try:
         plot_folder = "/tmp/plots"
         os.makedirs(plot_folder, exist_ok=True)

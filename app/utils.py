@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from flask import current_app
 from matplotlib.patches import Rectangle
 from storage3.exceptions import StorageApiError
+import pyedflib
 
 def get_supabase():
     """
@@ -640,3 +641,60 @@ def get_signed_urls_for_ecg(ecg):
     signed_wfdb_url = supabase.storage.from_(bucket_name).create_signed_url(ecg.wfdb_path, expires_in=3600)['signedURL']
     signed_plot_url = supabase.storage.from_(bucket_name).create_signed_url(ecg.plot_path, expires_in=3600)['signedURL']
     return signed_wfdb_url, signed_plot_url
+
+def convert_edf_to_wfdb(edf_path: str, rec_dir: str) -> str:
+    """
+    Converts an EDF file to a WFDB record (.dat and .hea files).
+
+    Parameters:
+        edf_path (str): Full path to the EDF file.
+        rec_dir (str): Output directory for the WFDB files.
+
+    Returns:
+        str: Base path (without extension) of the saved WFDB record.
+
+    Raises:
+        Exception: If conversion fails.
+    """
+    try:
+        if not os.path.exists(rec_dir):
+            os.makedirs(rec_dir, exist_ok=True)
+
+        record_name = os.path.splitext(os.path.basename(edf_path))[0]
+        wfdb_base_path = os.path.join(rec_dir, record_name)
+
+        logging.info(f"Converting EDF to WFDB: {edf_path}")
+
+        reader = pyedflib.EdfReader(edf_path)
+        n_signals = reader.signals_in_file
+        fs = reader.getSampleFrequency(0)
+        signal_labels = reader.getSignalLabels()
+        lengths = reader.getNSamples()
+
+        if n_signals == 0 or min(lengths) <= 0:
+            raise ValueError("Invalid or empty EDF file.")
+
+        min_len = min(lengths)
+        signals = np.zeros((min_len, n_signals), dtype=np.float32)
+
+        for i in range(n_signals):
+            raw = reader.readSignal(i)
+            signals[:, i] = raw[:min_len]
+
+        reader._close()
+
+        wfdb.wrsamp(
+            record_name=record_name,
+            fs=int(fs),
+            units=['mV'] * n_signals,
+            sig_name=signal_labels,
+            p_signal=signals,
+            write_dir=rec_dir
+        )
+
+        logging.info(f"Saved WFDB files to: {wfdb_base_path}.dat/.hea")
+        return wfdb_base_path
+
+    except Exception as e:
+        logging.error(f"Error converting {edf_path} to WFDB: {e}", exc_info=True)
+        raise
