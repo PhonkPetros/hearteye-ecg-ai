@@ -3,7 +3,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 import os, uuid, zipfile, shutil, logging
 from datetime import datetime
 from tempfile import TemporaryDirectory
-from ..utils import analyze_and_plot, load_and_clean_all_leads, upload_file_to_supabase, generate_signed_url_from_supabase, convert_edf_to_wfdb
+from ..utils import analyze_and_plot, load_and_clean_all_leads, upload_file_to_supabase, generate_signed_url_from_supabase, convert_edf_to_wfdb, predict_ecg_classification
 from ..models import db, ECG, User, generate_ecg_file_id
 import requests
 
@@ -91,6 +91,12 @@ def upload_wfdb():
         age = request.form.get('age')
         age = int(age) if age and age.isdigit() else None
         gender = request.form.get('gender')
+
+        summary = predict_ecg_classification(
+            summary,
+            age=age,
+            gender=gender
+        )
 
         # Save ECG record in DB
         ecg = ECG(

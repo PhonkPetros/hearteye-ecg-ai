@@ -4,7 +4,7 @@ import os
 import joblib
 
 # === Load trained model ===
-model_path = "models/xgb_rr_hr_optimized_model.pkl"  # adjust path if needed
+model_path = "models/rf_rr_hr_optimized_model.pkl"  # adjust model here
 model = joblib.load(model_path)
 expected_features = model.feature_names_in_
 
@@ -23,21 +23,6 @@ if missing:
     raise ValueError(f"Missing features in input data: {missing}")
 
 input_df = df[expected_features].copy()
-
-# === Clean and clip plausible ranges if desired ===
-# Example:
-clip_ranges = {
-    "qrs_duration": (60, 120),
-    "qt_interval": (300, 450),
-    "pq_interval": (50, 200),
-    "p_duration": (60, 120)
-}
-for col, (low, high) in clip_ranges.items():
-    if col in input_df.columns:
-        input_df[col] = pd.to_numeric(input_df[col], errors="coerce").clip(lower=low, upper=high)
-
-# === Handle missing values ===
-input_df = input_df.fillna(input_df.median(numeric_only=True))
 
 # === Predict ===
 y_pred = model.predict(input_df)

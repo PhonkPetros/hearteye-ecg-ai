@@ -12,6 +12,7 @@ from flask import current_app
 from matplotlib.patches import Rectangle
 from storage3.exceptions import StorageApiError
 import pyedflib
+import joblib
 
 def get_supabase():
     """
@@ -686,3 +687,45 @@ def convert_edf_to_wfdb(edf_path, output_dir=None):
     except Exception as e:
         raise Exception(f"EDF to WFDB conversion failed: {e}")
 
+
+def predict_ecg_classification(summary: dict, age: int, gender: str, model_path="models/rf_rr_hr_optimized_model.pkl"):
+    import joblib
+    import pandas as pd
+
+    model = joblib.load(model_path)
+    expected_features = list(model.feature_names_in_)
+
+    gender = gender.lower() if gender else "o"
+    gender_map = {"m": 0, "f": 1, "o": 2}
+    gender_encoded = gender_map.get(gender, 2)
+
+    feature_dict = {
+        "heart_rate": summary.get("heart_rate"),
+        "p_duration": summary.get("intervals", {}).get("P_wave_duration_ms"),
+        "pq_interval": summary.get("intervals", {}).get("PQ_interval_ms"),
+        "qrs_duration": summary.get("intervals", {}).get("QRS_duration_ms"),
+        "qt_interval": summary.get("intervals", {}).get("QT_interval_ms"),
+        "age": age,
+        "gender_encoded": gender_encoded
+    }
+
+    physionet_features = summary.get("physionet_features", {})
+    # Add all physionet features expected by the model, if they exist
+    for feat in ["rr_interval", "p_axis", "qrs_axis", "t_axis"]:
+        feature_dict[feat] = physionet_features.get(feat, None)
+
+    df = pd.DataFrame([feature_dict])
+
+    missing = set(expected_features) - set(df.columns)
+    if missing:
+        raise ValueError(f"Missing features: {missing}")
+
+    df = df[expected_features]
+
+    y_pred = model.predict(df)[0]
+    y_prob = float(model.predict_proba(df)[0][1])
+
+    summary["classification"] = "Abnormal" if y_pred == 1 else "Normal"
+    summary["confidence"] = round(y_prob, 4)
+
+    return summary
