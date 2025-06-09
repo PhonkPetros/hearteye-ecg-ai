@@ -5,7 +5,7 @@ import sys
 
 # Add app folder for local imports
 sys.path.append("./app")
-from utils import analyze_and_plot
+from services/ecg_processing_service import ECGProcessingService
 
 
 def batch_extract_features_from_ecg(
@@ -40,7 +40,7 @@ def batch_extract_features_from_ecg(
                 try:
                     record_basename = os.path.join(root, file_stem)
 
-                    summary, _ = analyze_and_plot(record_basename, plot_folder, file_id)
+                    summary, _ = ECGProcessingService.analyze_and_plot(record_basename, plot_folder, file_id)
                     features = summary.get("physionet_features", {})
 
                     row = {

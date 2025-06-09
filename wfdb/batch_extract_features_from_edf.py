@@ -6,7 +6,7 @@ import warnings
 
 # Add app folder for local imports
 sys.path.append("./app")
-from utils import analyze_and_plot  # make sure this exists and works
+from services/ecg_processing_service import ECGProcessingService
 
 # Suppress neurokit warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -45,7 +45,7 @@ def batch_extract_features_from_ecg(
                     record_basename = os.path.join(root, file_stem)
 
                     # Analyze signal using your actual analyzer
-                    summary, _ = analyze_and_plot(record_basename, plot_folder, file_id)
+                    summary, _ = ECGProcessingService.analyze_and_plot(record_basename, plot_folder, file_id)
                     features = summary.get("physionet_features", {})
 
                     row = {

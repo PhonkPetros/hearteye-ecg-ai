@@ -13,6 +13,7 @@ from .models import db
 from .routes.auth import auth_bp
 from .routes.ecg import ecg_bp
 from .routes.health import health_bp
+from .services.prediction_service import PredictionService
 
 # Initialize extensions
 jwt = JWTManager()
@@ -46,5 +47,8 @@ def create_app():
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(ecg_bp)
     app.register_blueprint(health_bp)
+
+    model_path = "models/rf_rr_hr_optimized_model.pkl"
+    PredictionService.load_model(model_path)
 
     return app

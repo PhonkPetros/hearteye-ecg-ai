@@ -1,18 +1,13 @@
 import logging
-from flask import Blueprint, request, jsonify, send_from_directory, current_app
+from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
-import os, uuid, zipfile, shutil
-from datetime import datetime
+import os, zipfile, shutil
 from tempfile import TemporaryDirectory
-from ..utils import (
-    analyze_and_plot,
-    load_and_clean_all_leads,
-    upload_file_to_supabase,
-    generate_signed_url_from_supabase,
-    convert_edf_to_wfdb,
-    predict_ecg_classification,
-)
-from ..models import db, ECG, User, generate_ecg_file_id
+from ..services.ecg_processing_service import ECGProcessingService
+from ..services.file_service import FileHandlingService
+from ..services.prediction_service import PredictionService
+from ..services.storage_service import StorageService
+from ..models import db, ECG, generate_ecg_file_id
 import requests
 
 
@@ -45,7 +40,7 @@ def convert_edf_files(rec_dir):
     for filename in os.listdir(rec_dir):
         if filename.lower().endswith(".edf"):
             edf_path = os.path.join(rec_dir, filename)
-            convert_edf_to_wfdb(edf_path, output_dir=rec_dir)
+            FileHandlingService.convert_edf_to_wfdb(edf_path, output_dir=rec_dir)
             os.remove(edf_path)
             return  # Assuming one EDF file max
 
@@ -74,21 +69,21 @@ def create_wfdb_zip(rec_dir, file_id):
 
 def upload_zip_to_storage(zip_path, file_id):
     storage_path = f"{file_id}/wfdb.zip"
-    file_url = upload_file_to_supabase(zip_path, storage_path)
+    file_url = StorageService.upload_file_to_supabase(zip_path, storage_path)
     return storage_path, file_url
 
 
 def analyze_ecg_and_plot(wfdb_basename, file_id):
     plot_folder = "/tmp/plots"
     os.makedirs(plot_folder, exist_ok=True)
-    return analyze_and_plot(
+    return ECGProcessingService.analyze_and_plot(
         wfdb_basename=wfdb_basename, plot_folder=plot_folder, file_id=file_id
     )
 
 
 def upload_plot(plot_path, file_id):
     plot_storage_path = f"{file_id}/plot.png"
-    plot_public_url = upload_file_to_supabase(plot_path, plot_storage_path)
+    plot_public_url = StorageService.upload_file_to_supabase(plot_path, plot_storage_path)
     return plot_storage_path, plot_public_url
 
 
@@ -102,7 +97,7 @@ def extract_metadata(form):
 
 
 def predict_summary(summary, age, gender):
-    return predict_ecg_classification(summary, age=age, gender=gender)
+    return PredictionService.predict_ecg_classification(summary, age=age, gender=gender)
 
 
 def save_ecg_record(
@@ -151,7 +146,7 @@ def predict_wfdb():
     try:
         file = request.files.get("file")
         validate_upload_file(file)
-        logger.info("File validated successfully", extra={"filename": file.filename, "file_id": file_id})
+        logger.info("File validated successfully", extra={"file_id": file_id})
 
         rec_dir = save_and_extract_zip(file, file_id)
         logger.info("Zip file saved and extracted", extra={"rec_dir": rec_dir, "file_id": file_id})
@@ -229,7 +224,7 @@ def get_record(file_id):
         logger.warning("Record not found", extra={"file_id": file_id, "user_id": user_id})
         return jsonify({"error": "Record not found"}), 404
 
-    plot_url = generate_signed_url_from_supabase(ecg.plot_path)
+    plot_url = StorageService.generate_signed_url(ecg.plot_path)
     record_data = ecg.to_dict()
     record_data["plot_url"] = plot_url
 
@@ -265,7 +260,7 @@ def get_ecg_leads(file_id):
         return jsonify({"error": "Record not found"}), 404
 
     try:
-        zip_url = generate_signed_url_from_supabase(ecg.wfdb_path)
+        zip_url = StorageService.generate_signed_url(ecg.wfdb_path)
         with TemporaryDirectory() as temp_dir:
             local_zip_path = os.path.join(temp_dir, "ecg.zip")
             resp = requests.get(zip_url)
@@ -276,7 +271,7 @@ def get_ecg_leads(file_id):
             with zipfile.ZipFile(local_zip_path, "r") as z:
                 z.extractall(temp_dir)
 
-            data = load_and_clean_all_leads(temp_dir)
+            data = FileHandlingService.load_and_clean_all_leads(temp_dir)
 
         logger.info("ECG leads data loaded", extra={"file_id": file_id, "user_id": user_id})
         return jsonify(

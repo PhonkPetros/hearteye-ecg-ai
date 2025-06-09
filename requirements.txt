@@ -22,3 +22,4 @@ python-dotenv
 supabase
 pyedflib
 python-json-logger
+storage3
