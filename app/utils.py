@@ -4,12 +4,14 @@ from scipy.signal import find_peaks
 import scipy.signal as signal
 import logging
 import os
+import re
 import wfdb
 import neurokit2 as nk
 import matplotlib.pyplot as plt
 from flask import current_app
 from matplotlib.patches import Rectangle
 from storage3.exceptions import StorageApiError
+import pyedflib
 
 def get_supabase():
     """
@@ -640,3 +642,47 @@ def get_signed_urls_for_ecg(ecg):
     signed_wfdb_url = supabase.storage.from_(bucket_name).create_signed_url(ecg.wfdb_path, expires_in=3600)['signedURL']
     signed_plot_url = supabase.storage.from_(bucket_name).create_signed_url(ecg.plot_path, expires_in=3600)['signedURL']
     return signed_wfdb_url, signed_plot_url
+
+
+def convert_edf_to_wfdb(edf_path, output_dir=None):
+    import os, re, numpy as np, pyedflib, wfdb
+
+    def sanitize_filename(name: str) -> str:
+        sanitized = re.sub(r'[^a-zA-Z0-9_-]+', '_', name)
+        sanitized = sanitized.strip('_')
+        return sanitized or "default_record_name"
+
+    try:
+        if output_dir is None:
+            output_dir = os.path.dirname(edf_path)
+
+        filename_base = os.path.splitext(os.path.basename(edf_path))[0]
+        record_name = sanitize_filename(filename_base)
+
+        edf_reader = pyedflib.EdfReader(edf_path)
+        num_signals = edf_reader.signals_in_file
+        fs = edf_reader.getSampleFrequency(0)
+        signal_labels = edf_reader.getSignalLabels()
+        signals = [edf_reader.readSignal(i) for i in range(num_signals)]
+        edf_reader.close()
+        del edf_reader
+
+        # Trim signals to shortest length
+        min_len = min(len(s) for s in signals)
+        signals_trimmed = [s[:min_len] for s in signals]
+
+        # Save as WFDB using record_name and write_dir separately
+        wfdb.wrsamp(
+            record_name,
+            fs=fs,
+            units=['uV'] * num_signals,
+            sig_name=signal_labels,
+            p_signal=np.column_stack(signals_trimmed),
+            write_dir=output_dir
+        )
+
+        return os.path.join(output_dir, record_name)
+
+    except Exception as e:
+        raise Exception(f"EDF to WFDB conversion failed: {e}")
+
