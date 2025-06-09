@@ -11,139 +11,159 @@ import requests
 wfdb_bp = Blueprint('wfdb', __name__)
 logger = logging.getLogger(__name__)
 
-@wfdb_bp.route('/upload', methods=['POST'])
-@jwt_required()
-def upload_wfdb():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
-    f = request.files['file']
-    if not f.filename.lower().endswith('.zip'):
-        return jsonify({'error': 'ZIP required'}), 400
+def validate_upload_file(file):
+    if file is None:
+        raise ValueError('No file part')
+    if not file.filename.lower().endswith('.zip'):
+        raise ValueError('ZIP required')
 
-    user_id = int(get_jwt_identity())
-    file_id = generate_ecg_file_id()
-
-    # Save uploaded ZIP to temp path
+def save_and_extract_zip(file, file_id):
     temp_path = f"/tmp/{file_id}.zip"
-    f.save(temp_path)
+    file.save(temp_path)
 
-    # Extract to temp dir
-    rec_dir = f"/tmp/{file_id}"
-    os.makedirs(rec_dir, exist_ok=True)
+    extract_dir = f"/tmp/{file_id}"
+    os.makedirs(extract_dir, exist_ok=True)
     with zipfile.ZipFile(temp_path, 'r') as z:
-        z.extractall(rec_dir)
+        z.extractall(extract_dir)
     os.remove(temp_path)
 
-    # Convert EDF to WFDB if needed
+    return extract_dir
+
+def convert_edf_files(rec_dir):
     for filename in os.listdir(rec_dir):
         if filename.lower().endswith('.edf'):
             edf_path = os.path.join(rec_dir, filename)
-            try:
-                convert_edf_to_wfdb(edf_path, output_dir=rec_dir)
-                os.remove(edf_path)
-            except Exception as e:
-                logger.exception(f'EDF conversion failed for {edf_path}')
-                shutil.rmtree(rec_dir, ignore_errors=True)
-                return jsonify({'error': str(e)}), 400
-            break
+            convert_edf_to_wfdb(edf_path, output_dir=rec_dir)
+            os.remove(edf_path)
+            return  # Assuming one EDF file max
 
-    # Ensure at least one .hea file exists
+def ensure_hea_exists(rec_dir):
     hea = next((fn for fn in os.listdir(rec_dir) if fn.lower().endswith('.hea')), None)
     if not hea:
-        shutil.rmtree(rec_dir, ignore_errors=True)
-        return jsonify({'error': 'No .hea found'}), 400
+        raise FileNotFoundError('No .hea found')
+    return hea
 
-    # Remove any non-WFDB files (keep only .hea, .dat, .atr)
+def clean_non_wfdb_files(rec_dir):
     allowed_exts = {'.hea', '.dat', '.atr'}
     for file in os.listdir(rec_dir):
         if os.path.splitext(file)[1].lower() not in allowed_exts:
             os.remove(os.path.join(rec_dir, file))
 
-    # Create ZIP with only WFDB files
-    wfdb_zip_path = f"/tmp/{file_id}_wfdb.zip"
-    with zipfile.ZipFile(wfdb_zip_path, 'w') as zipf:
-        for file in os.listdir(rec_dir):
-            file_path = os.path.join(rec_dir, file)
-            zipf.write(file_path, arcname=file)
+def create_wfdb_zip(rec_dir, file_id):
+    zip_path = f"/tmp/{file_id}_wfdb.zip"
+    with zipfile.ZipFile(zip_path, 'w') as zipf:
+        for f in os.listdir(rec_dir):
+            zipf.write(os.path.join(rec_dir, f), arcname=f)
+    return zip_path
 
-    # Upload ZIP to Supabase
+def upload_zip_to_storage(zip_path, file_id):
     storage_path = f"{file_id}/wfdb.zip"
-    file_url = upload_file_to_supabase(wfdb_zip_path, storage_path)
+    file_url = upload_file_to_supabase(zip_path, storage_path)
+    return storage_path, file_url
 
-    wfdb_basename = os.path.join(rec_dir, os.path.splitext(hea)[0])
+def analyze_ecg_and_plot(wfdb_basename, file_id):
+    plot_folder = "/tmp/plots"
+    os.makedirs(plot_folder, exist_ok=True)
+    return analyze_and_plot(wfdb_basename=wfdb_basename, plot_folder=plot_folder, file_id=file_id)
+
+def upload_plot(plot_path, file_id):
+    plot_storage_path = f"{file_id}/plot.png"
+    plot_public_url = upload_file_to_supabase(plot_path, plot_storage_path)
+    return plot_storage_path, plot_public_url
+
+def extract_metadata(form):
+    patient_name = form.get('patient_name')
+    age = form.get('age')
+    age = int(age) if age and age.isdigit() else None
+    gender = form.get('gender')
+    notes = form.get('notes')
+    return patient_name, age, gender, notes
+
+def predict_summary(summary, age, gender):
+    return predict_ecg_classification(summary, age=age, gender=gender)
+
+def save_ecg_record(file_id, user_id, patient_name, age, gender, summary, notes, wfdb_path, plot_path):
+    ecg = ECG(
+        file_id=file_id,
+        user_id=user_id,
+        patient_name=patient_name,
+        age=age,
+        gender=gender,
+        heart_rate=summary.get('heart_rate'),
+        p_wave_duration=summary.get('intervals', {}).get('P_wave_duration_ms'),
+        pq_interval=summary.get('intervals', {}).get('PQ_interval_ms'),
+        qrs_duration=summary.get('intervals', {}).get('QRS_duration_ms'),
+        qt_interval=summary.get('intervals', {}).get('QT_interval_ms'),
+        classification=summary.get('classification'),
+        confidence=summary.get('confidence'),
+        notes=notes,
+        wfdb_path=wfdb_path,
+        plot_path=plot_path
+    )
+    db.session.add(ecg)
+    db.session.commit()
+    return ecg
+
+def cleanup_files(*paths):
+    for path in paths:
+        if os.path.isdir(path):
+            shutil.rmtree(path, ignore_errors=True)
+        elif os.path.isfile(path):
+            try:
+                os.remove(path)
+            except Exception:
+                pass
+
+@wfdb_bp.route('/predict', methods=['POST'])
+@jwt_required()
+def predict_wfdb():
+    user_id = int(get_jwt_identity())
+    file_id = generate_ecg_file_id()
+
     try:
-        # Generate ECG summary & plot
-        plot_folder = "/tmp/plots"
-        os.makedirs(plot_folder, exist_ok=True)
+        file = request.files.get('file')
+        validate_upload_file(file)
 
-        summary, plot_path = analyze_and_plot(
-            wfdb_basename=wfdb_basename,
-            plot_folder=plot_folder,
-            file_id=file_id
+        rec_dir = save_and_extract_zip(file, file_id)
+        convert_edf_files(rec_dir)
+
+        hea_file = ensure_hea_exists(rec_dir)
+        clean_non_wfdb_files(rec_dir)
+
+        wfdb_zip_path = create_wfdb_zip(rec_dir, file_id)
+        wfdb_storage_path, _ = upload_zip_to_storage(wfdb_zip_path, file_id)
+
+        wfdb_basename = os.path.join(rec_dir, os.path.splitext(hea_file)[0])
+        summary, plot_path = analyze_ecg_and_plot(wfdb_basename, file_id)
+
+        plot_storage_path, plot_public_url = upload_plot(plot_path, file_id)
+
+        patient_name, age, gender, notes = extract_metadata(request.form)
+        summary = predict_summary(summary, age, gender)
+
+        ecg_record = save_ecg_record(
+            file_id, user_id, patient_name, age, gender,
+            summary, notes, wfdb_storage_path, plot_storage_path
         )
 
-        # Upload plot image
-        plot_storage_path = f"{file_id}/plot.png"
-        plot_public_url = upload_file_to_supabase(plot_path, plot_storage_path)
-
-        # Parse metadata
-        patient_name = request.form.get('patient_name')
-        age = request.form.get('age')
-        age = int(age) if age and age.isdigit() else None
-        gender = request.form.get('gender')
-
-        summary = predict_ecg_classification(
-            summary,
-            age=age,
-            gender=gender
-        )
-
-        # Save ECG record in DB
-        ecg = ECG(
-            file_id=file_id,
-            user_id=user_id,
-            patient_name=patient_name,
-            age=age,
-            gender=gender,
-            heart_rate=summary.get('heart_rate'),
-            p_wave_duration=summary.get('intervals', {}).get('P_wave_duration_ms'),
-            pq_interval=summary.get('intervals', {}).get('PQ_interval_ms'),
-            qrs_duration=summary.get('intervals', {}).get('QRS_duration_ms'),
-            qt_interval=summary.get('intervals', {}).get('QT_interval_ms'),
-            classification=summary.get('classification'),
-            confidence=summary.get('confidence'),
-            notes=request.form.get('notes'),
-            wfdb_path=storage_path,
-            plot_path=plot_storage_path
-        )
-
-        db.session.add(ecg)
-        db.session.commit()
-
-        # Cleanup
-        shutil.rmtree(rec_dir, ignore_errors=True)
-        os.remove(wfdb_zip_path)
-        os.remove(plot_path)
+        cleanup_files(rec_dir, wfdb_zip_path, plot_path)
 
         return jsonify({
             'file_id': file_id,
             'summary': summary,
             'plot': plot_public_url,
-            'record': ecg.to_dict()
+            'record': ecg_record.to_dict()
         }), 201
 
     except Exception as e:
-        logger.exception('WFDB analysis failed on upload')
-        shutil.rmtree(rec_dir, ignore_errors=True)
-        if os.path.exists(wfdb_zip_path):
-            os.remove(wfdb_zip_path)
-        if os.path.exists(plot_path):
-            os.remove(plot_path)
-        return jsonify({'error': f'Analysis failed: {e}'}), 500
+        logger.exception('WFDB analysis failed on predict')
+        cleanup_files(rec_dir if 'rec_dir' in locals() else None,
+                      wfdb_zip_path if 'wfdb_zip_path' in locals() else None,
+                      plot_path if 'plot_path' in locals() else None)
+        return jsonify({'error': str(e)}), 400
 
 
-
-@wfdb_bp.route('/record/<file_id>', methods=['GET'])
+@wfdb_bp.route('/ecg/<file_id>', methods=['GET'])
 @jwt_required()
 def get_record(file_id):
     user_id = int(get_jwt_identity())
@@ -175,56 +195,6 @@ def history():
     records = query.order_by(ECG.upload_date.desc()).all()
     
     return jsonify([record.to_dict() for record in records]), 200
-
-@wfdb_bp.route('/analyze/<file_id>', methods=['GET'])
-@jwt_required()
-def analyze_wfdb(file_id):
-    temp_dir = tempfile.mkdtemp()
-    plot_folder = None
-    try:
-        local_record_dir = os.path.join(temp_dir, file_id)
-        os.makedirs(local_record_dir, exist_ok=True)
-
-        success = download_supabase_folder(bucket=SUPABASE_BUCKET, 
-                                           folder=f"{WFDB_FOLDER}/{file_id}", 
-                                           local_path=local_record_dir)
-        if not success:
-            return jsonify({'error': 'Record not found in storage'}), 404
-
-        hea = next((fn for fn in os.listdir(local_record_dir) if fn.lower().endswith('.hea')), None)
-        if not hea:
-            return jsonify({'error': 'No .hea found'}), 400
-
-        wfdb_basename = os.path.join(local_record_dir, os.path.splitext(hea)[0])
-
-        plot_folder = tempfile.mkdtemp()
-        summary, plot_path = analyze_and_plot(
-            wfdb_basename=wfdb_basename,
-            plot_folder=plot_folder,
-            file_id=file_id
-        )
-    # Upload plot to 'plots/<file_id>/'
-        plot_filename = os.path.basename(plot_path)
-        supabase_plot_path = f"{PLOTS_FOLDER}/{file_id}/{plot_filename}"
-        upload_file_to_supabase(bucket=SUPABASE_BUCKET, 
-                               local_path=plot_path, 
-                               remote_path=supabase_plot_path)
-
-        plot_url = generate_signed_url_from_supabase(supabase_plot_path)
-
-    except Exception as e:
-        logger.exception('WFDB analysis failed')
-        return jsonify({'error': f'Analysis failed: {e}'}), 500
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
-        if plot_folder:
-            shutil.rmtree(plot_folder, ignore_errors=True)
-
-    return jsonify({'summary': summary, 'plot': plot_url}), 200
-
-@wfdb_bp.route('/plots/<filename>')
-def serve_plot(filename):
-    return send_from_directory(current_app.config['PLOTS_DIR'], filename)
 
 @wfdb_bp.route('/ecg/<file_id>/leads', methods=['GET'])
 @jwt_required()
@@ -274,7 +244,7 @@ def get_ecg_leads(file_id):
         logger.exception(f"Failed to load ECG leads for {file_id}")
         return jsonify({'error': f"Failed to load ECG leads: {e}"}), 500
 
-@wfdb_bp.route('/api/ecg/<file_id>/notes', methods=['PUT'])
+@wfdb_bp.route('/ecg/<file_id>/notes', methods=['PUT'])
 @jwt_required()
 def update_ecg_notes(file_id):
     user_id = int(get_jwt_identity())
