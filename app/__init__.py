@@ -11,7 +11,7 @@ import sys
 from .config import Config
 from .models import db
 from .routes.auth import auth_bp
-from .routes.wfdb import wfdb_bp
+from .routes.wfdb import ecg_bp
 from .routes.health import health_bp
 
 # Initialize extensions
@@ -36,7 +36,7 @@ def create_app():
     app.supabase = create_client(app.config['SUPABASE_URL'], app.config['SUPABASE_KEY'])
 
     app.register_blueprint(auth_bp, url_prefix='/auth')
-    app.register_blueprint(wfdb_bp)
+    app.register_blueprint(ecg_bp)
     app.register_blueprint(health_bp)
 
     return app

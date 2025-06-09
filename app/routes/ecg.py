@@ -8,7 +8,7 @@ from ..models import db, ECG, User, generate_ecg_file_id
 import requests
 
 
-wfdb_bp = Blueprint('wfdb', __name__)
+ecg_bp = Blueprint('ecg', __name__)
 logger = logging.getLogger(__name__)
 
 def validate_upload_file(file):
@@ -114,7 +114,7 @@ def cleanup_files(*paths):
             except Exception:
                 pass
 
-@wfdb_bp.route('/predict', methods=['POST'])
+@ecg_bp.route('/predict', methods=['POST'])
 @jwt_required()
 def predict_wfdb():
     user_id = int(get_jwt_identity())
@@ -163,7 +163,7 @@ def predict_wfdb():
         return jsonify({'error': str(e)}), 400
 
 
-@wfdb_bp.route('/ecg/<file_id>', methods=['GET'])
+@ecg_bp.route('/ecg/<file_id>', methods=['GET'])
 @jwt_required()
 def get_record(file_id):
     user_id = int(get_jwt_identity())
@@ -181,7 +181,7 @@ def get_record(file_id):
     
     return jsonify(record_data), 200
 
-@wfdb_bp.route('/history', methods=['GET'])
+@ecg_bp.route('/history', methods=['GET'])
 @jwt_required()
 def history():
     user_id = int(get_jwt_identity())
@@ -196,7 +196,7 @@ def history():
     
     return jsonify([record.to_dict() for record in records]), 200
 
-@wfdb_bp.route('/ecg/<file_id>/leads', methods=['GET'])
+@ecg_bp.route('/ecg/<file_id>/leads', methods=['GET'])
 @jwt_required()
 def get_ecg_leads(file_id):
     user_id = int(get_jwt_identity())
@@ -244,7 +244,7 @@ def get_ecg_leads(file_id):
         logger.exception(f"Failed to load ECG leads for {file_id}")
         return jsonify({'error': f"Failed to load ECG leads: {e}"}), 500
 
-@wfdb_bp.route('/ecg/<file_id>/notes', methods=['PUT'])
+@ecg_bp.route('/ecg/<file_id>/notes', methods=['PUT'])
 @jwt_required()
 def update_ecg_notes(file_id):
     user_id = int(get_jwt_identity())
