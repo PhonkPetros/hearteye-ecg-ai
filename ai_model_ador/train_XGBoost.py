@@ -12,7 +12,7 @@ import shap
 
 # === Load dataset ===
 
-df = pd.read_csv("data/external/cleaned-dataset/Balanced_Feature_Dataset.csv")
+df = pd.read_csv("data/external/cleaned-dataset/Balanced_Synthetic_Dataset.csv")
 
 # === Encode gender and binary label ===
 df["gender_encoded"] = df["gender"].map({"M": 0, "F": 1})
