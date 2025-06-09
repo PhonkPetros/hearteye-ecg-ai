@@ -18,12 +18,13 @@ def batch_extract_features_from_ecg(wfdb_root_folder, output_csv, plot_folder="p
 
     # Load existing CSV if it exists
     if os.path.exists(output_csv):
-        processed_df = pd.read_csv(output_csv)
+        processed_df = pd.read_csv(output_csv, on_bad_lines='skip')  
         processed_ids = set(processed_df['file_id'].astype(str))
         print(f"🔁 Resuming — {len(processed_ids)} ECGs already processed.")
     else:
         print("🚀 Starting fresh.")
 
+    
     new_count = 0
 
     for root, dirs, files in os.walk(wfdb_root_folder):
@@ -80,5 +81,5 @@ def batch_extract_features_from_ecg(wfdb_root_folder, output_csv, plot_folder="p
 if __name__ == "__main__":
     input_dir = "data/external/cleaned-dataset/relevant_data/files"
     output_csv = "data/external/cleaned-dataset/final1_ecg_features_dataset.csv"
-    batch_extract_features_from_ecg(input_dir, output_csv, max_new= 30000)
-  
+    batch_extract_features_from_ecg(input_dir, output_csv, max_new= 30)
+
