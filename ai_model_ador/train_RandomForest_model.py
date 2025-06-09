@@ -1,8 +1,17 @@
 import pandas as pd
 import numpy as np
 import os
-from sklearn.model_selection import train_test_split, StratifiedKFold, RandomizedSearchCV
-from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay, precision_recall_curve
+from sklearn.model_selection import (
+    train_test_split,
+    StratifiedKFold,
+    RandomizedSearchCV,
+)
+from sklearn.metrics import (
+    classification_report,
+    confusion_matrix,
+    ConfusionMatrixDisplay,
+    precision_recall_curve,
+)
 from sklearn.ensemble import RandomForestClassifier
 from imblearn.over_sampling import RandomOverSampler
 import matplotlib.pyplot as plt
@@ -10,7 +19,7 @@ import joblib
 import shap
 
 # === Load dataset ===
-#df = pd.read_csv("data/external/datasete for traning/Balanced_ECG_Dataset (1).csv")10000
+# df = pd.read_csv("data/external/datasete for traning/Balanced_ECG_Dataset (1).csv")10000
 df = pd.read_csv("data/external/cleaned-dataset/Balanced_Feature_Dataset.csv")
 
 # === Encode gender and binary label ===
@@ -18,21 +27,38 @@ df["gender_encoded"] = df["gender"].map({"M": 0, "F": 1})
 df["binary_label"] = df["label"].apply(lambda x: 0 if x == "normal" else 1)
 
 # === Drop irrelevant columns ===
-columns_to_drop = ['file_id', 'study_id', 'file_path', 'file_path.1', 'Unnamed: 0', 'label', 'gender']
+columns_to_drop = [
+    "file_id",
+    "study_id",
+    "file_path",
+    "file_path.1",
+    "Unnamed: 0",
+    "label",
+    "gender",
+]
 df = df.drop(columns=columns_to_drop)
 
 # === Prepare features and label ===
 selected_features = [
-    "heart_rate", "rr_interval",
-    "p_duration", "pq_interval", "qrs_duration", "qt_interval",
-    "p_axis", "qrs_axis", "t_axis",
-    "age", "gender_encoded"
+    "heart_rate",
+    "rr_interval",
+    "p_duration",
+    "pq_interval",
+    "qrs_duration",
+    "qt_interval",
+    "p_axis",
+    "qrs_axis",
+    "t_axis",
+    "age",
+    "gender_encoded",
 ]
 X = df[selected_features].copy()
 y = df["binary_label"]
 
 # === Split into train/test sets ===
-X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=0.2, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, stratify=y, test_size=0.2, random_state=42
+)
 
 # === Oversample training data ===
 ros = RandomOverSampler(random_state=42)
@@ -40,12 +66,12 @@ X_train_bal, y_train_bal = ros.fit_resample(X_train, y_train)
 
 # === Hyperparameter space ===
 param_dist = {
-    'n_estimators': [100, 200, 300],
-    'max_depth': [10, 20, 30, None],
-    'min_samples_split': [2, 5, 10],
-    'min_samples_leaf': [1, 2, 4],
-    'max_features': ['sqrt', 'log2', None],
-    'bootstrap': [True, False]
+    "n_estimators": [100, 200, 300],
+    "max_depth": [10, 20, 30, None],
+    "min_samples_split": [2, 5, 10],
+    "min_samples_leaf": [1, 2, 4],
+    "max_features": ["sqrt", "log2", None],
+    "bootstrap": [True, False],
 }
 
 cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
@@ -55,11 +81,11 @@ search = RandomizedSearchCV(
     estimator=rf_clf,
     param_distributions=param_dist,
     n_iter=50,
-    scoring='accuracy',
+    scoring="accuracy",
     n_jobs=-1,
     cv=cv,
     verbose=2,
-    random_state=42
+    random_state=42,
 )
 
 search.fit(X_train_bal, y_train_bal)
@@ -74,7 +100,9 @@ for threshold in [0.3, 0.35, 0.4, 0.5]:
     print(classification_report(y_test, y_pred, target_names=["normal", "abnormal"]))
 
     cm = confusion_matrix(y_test, y_pred)
-    ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["normal", "abnormal"]).plot(cmap="Greens")
+    ConfusionMatrixDisplay(
+        confusion_matrix=cm, display_labels=["normal", "abnormal"]
+    ).plot(cmap="Greens")
     plt.title(f"Random Forest Confusion Matrix (Threshold = {threshold:.2f})")
     plt.grid(False)
     plt.tight_layout()

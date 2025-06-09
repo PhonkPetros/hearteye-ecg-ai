@@ -37,7 +37,9 @@ results["Prediction_Label"] = results["Prediction"].map({0: "Normal", 1: "Abnorm
 # === Print results ===
 print("\n🔍 Detailed Predictions:\n")
 for i, row in results.iterrows():
-    print(f"🔹 ECG {i}: {row['Prediction_Label']} (Confidence: {row['Abnormal_Prob']:.4f})")
+    print(
+        f"🔹 ECG {i}: {row['Prediction_Label']} (Confidence: {row['Abnormal_Prob']:.4f})"
+    )
 
 # === Summary ===
 total = len(results)

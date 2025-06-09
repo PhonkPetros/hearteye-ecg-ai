@@ -11,7 +11,7 @@ import sys
 from .config import Config
 from .models import db
 from .routes.auth import auth_bp
-from .routes.wfdb import ecg_bp
+from .routes.ecg import ecg_bp
 from .routes.health import health_bp
 
 # Initialize extensions
@@ -20,22 +20,23 @@ migrate = Migrate()
 
 logger = logging.getLogger(__name__)
 
+
 # Application factory
 def create_app():
     app = Flask(__name__)
-    
+
     # Load config from Config class directly
     config = {key: getattr(Config, key) for key in dir(Config) if key.isupper()}
     app.config.update(config)
 
-    CORS(app, supports_credentials=True, origins=app.config.get('CORS_ORIGINS', []))
+    CORS(app, supports_credentials=True, origins=app.config.get("CORS_ORIGINS", []))
     jwt.init_app(app)
     db.init_app(app)
     migrate.init_app(app, db)
-    
-    app.supabase = create_client(app.config['SUPABASE_URL'], app.config['SUPABASE_KEY'])
 
-    app.register_blueprint(auth_bp, url_prefix='/auth')
+    app.supabase = create_client(app.config["SUPABASE_URL"], app.config["SUPABASE_KEY"])
+
+    app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(ecg_bp)
     app.register_blueprint(health_bp)
 

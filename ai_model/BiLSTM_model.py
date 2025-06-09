@@ -9,8 +9,10 @@ from sklearn.metrics import classification_report, accuracy_score
 
 
 class ECGDataGenerator(Sequence):
-    def __init__(self, path_to_hdf5, signal_dset, label_dset, batch_size=32, max_samples=1000):
-        self.file = h5py.File(path_to_hdf5, 'r')
+    def __init__(
+        self, path_to_hdf5, signal_dset, label_dset, batch_size=32, max_samples=1000
+    ):
+        self.file = h5py.File(path_to_hdf5, "r")
         self.x = self.file[signal_dset]
         self.y = self.file[label_dset]
 
@@ -30,7 +32,9 @@ class ECGDataGenerator(Sequence):
         end_idx = min((index + 1) * self.batch_size, self.max_samples)
         batch_indices = self.indices[start_idx:end_idx]
 
-        batch_x = np.empty((len(batch_indices), self.x.shape[1], self.x.shape[2]), dtype=self.x.dtype)
+        batch_x = np.empty(
+            (len(batch_indices), self.x.shape[1], self.x.shape[2]), dtype=self.x.dtype
+        )
         batch_y = np.empty((len(batch_indices),), dtype=self.y.dtype)
 
         for i, idx in enumerate(batch_indices):
@@ -41,10 +45,6 @@ class ECGDataGenerator(Sequence):
 
         return batch_x, batch_y
 
-
-
-
-
     def on_epoch_end(self):
         np.random.shuffle(self.indices)
 
@@ -53,39 +53,49 @@ class ECGDataGenerator(Sequence):
 
 
 def get_model(num_classes):
-    model = Sequential([
-        Bidirectional(LSTM(64, return_sequences=True), input_shape=(5000, 12)),
-        LSTM(32),
-        Dense(num_classes, activation='softmax')
-    ])
+    model = Sequential(
+        [
+            Bidirectional(LSTM(64, return_sequences=True), input_shape=(5000, 12)),
+            LSTM(32),
+            Dense(num_classes, activation="softmax"),
+        ]
+    )
     return model
 
 
 if __name__ == "__main__":
     # File paths
-    train_file = 'C:/Users/maike/hearteye/train_data.h5'
-    val_file = 'C:/Users/maike/hearteye/val_data.h5'
-    test_file = 'C:/Users/maike/hearteye/test_data.h5'
+    train_file = "C:/Users/maike/hearteye/train_data.h5"
+    val_file = "C:/Users/maike/hearteye/val_data.h5"
+    test_file = "C:/Users/maike/hearteye/test_data.h5"
 
-    signal_dset = 'ecg_data'
-    label_dset = 'labels'
+    signal_dset = "ecg_data"
+    label_dset = "labels"
 
     batch_size = 32
     max_samples = 1000
     num_classes = 3
 
     # Create data generators
-    train_generator = ECGDataGenerator(train_file, signal_dset, label_dset, batch_size, max_samples)
-    val_generator = ECGDataGenerator(val_file, signal_dset, label_dset, batch_size, max_samples)
-    test_generator = ECGDataGenerator(test_file, signal_dset, label_dset, batch_size, max_samples)
+    train_generator = ECGDataGenerator(
+        train_file, signal_dset, label_dset, batch_size, max_samples
+    )
+    val_generator = ECGDataGenerator(
+        val_file, signal_dset, label_dset, batch_size, max_samples
+    )
+    test_generator = ECGDataGenerator(
+        test_file, signal_dset, label_dset, batch_size, max_samples
+    )
 
     # Build and compile the model
     model = get_model(num_classes)
-    model.compile(optimizer=Adam(), loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+    model.compile(
+        optimizer=Adam(), loss="sparse_categorical_crossentropy", metrics=["accuracy"]
+    )
 
     callbacks = [
-        ModelCheckpoint('best_model.h5', save_best_only=True),
-        EarlyStopping(monitor='val_loss', patience=5)
+        ModelCheckpoint("best_model.h5", save_best_only=True),
+        EarlyStopping(monitor="val_loss", patience=5),
     ]
 
     # Train with validation
@@ -94,10 +104,10 @@ if __name__ == "__main__":
         validation_data=val_generator,
         epochs=20,
         callbacks=callbacks,
-        verbose=1
+        verbose=1,
     )
 
-    model.save('final_model.h5')
+    model.save("final_model.h5")
 
     # Predict and evaluate on test data
     predictions = model.predict(test_generator, verbose=1)
@@ -113,6 +123,8 @@ if __name__ == "__main__":
     acc = accuracy_score(true_labels, predicted_labels)
     print(f"Accuracy: {acc:.4f}")
 
-    report = classification_report(true_labels, predicted_labels, target_names=[str(i) for i in range(num_classes)])
+    report = classification_report(
+        true_labels, predicted_labels, target_names=[str(i) for i in range(num_classes)]
+    )
     print("Classification Report:")
     print(report)

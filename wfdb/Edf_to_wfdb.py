@@ -40,10 +40,10 @@ for filename in os.listdir(edf_folder):
         wfdb.wrsamp(
             record_name=record_name,
             fs=int(fs),
-            units=['mV'] * n_signals,
+            units=["mV"] * n_signals,
             sig_name=signal_labels,
             p_signal=signals,
-            write_dir=wfdb_output_folder
+            write_dir=wfdb_output_folder,
         )
 
         print(f"✅ Saved: {wfdb_path}.dat / .hea")
