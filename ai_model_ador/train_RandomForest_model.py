@@ -115,5 +115,5 @@ for threshold in [0.3, 0.35, 0.4, 0.5]:
 
 # === Save model ===
 os.makedirs("models", exist_ok=True)
-joblib.dump(best_rf, "models/rf_rr_hr_optimized_model.pkl")
+joblib.dump(best_rf, "models/rf_rr_hr_optimized_model_v1.pkl")
 print("\n✅ Random Forest model saved as rf_rr_hr_optimized_model.pkl")
