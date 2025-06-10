@@ -4,7 +4,7 @@ import os
 import joblib
 
 # === Load trained model ===
-model_path = "models/rf_rr_hr_optimized_model.pkl"  # adjust model here
+model_path = "models/rf_rr_hr_optimized_model_v1.pkl"  # adjust model here
 model = joblib.load(model_path)
 expected_features = model.feature_names_in_
 
