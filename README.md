@@ -17,6 +17,7 @@ Before you start, ensure the following:
 - Docker is installed and running on your local machine.
 - You have the `.env` file with all necessary environment variables.
 - You have permission to create/delete container instances in the specified resource group.
+- You have docker deamon running.
 
 ---
 ### Redeployment steps

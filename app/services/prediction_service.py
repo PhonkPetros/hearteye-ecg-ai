@@ -105,7 +105,7 @@ class PredictionService:
 
             # Perform prediction
             y_pred = PredictionService.model.predict(df)[0]
-            y_prob = float(PredictionService.model.predict_proba(df)[0][1]) # Assuming 1 is the 'Abnormal' class
+            y_prob = float(PredictionService.model.predict_proba(df)[0][y_pred])  # Confidence of predicted class
 
             # Update the summary with classification results
             summary["classification"] = "Abnormal" if y_pred == 1 else "Normal"
