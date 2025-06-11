@@ -46,7 +46,7 @@ def create_app():
     app.register_blueprint(health_bp)
 
     # Load ML model
-    model_path = "models/rf_rr_hr_optimized_model_v1.pkl"
+    model_path = "models/xgb_rr_hr_optimized_model_v2.pkl"
     PredictionService.load_model(model_path)
     
     # Register error handlers

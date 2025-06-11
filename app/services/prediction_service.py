@@ -4,6 +4,8 @@ import pandas as pd
 import logging
 from typing import Union, Dict
 from ..utils.exceptions import APIError, ErrorCodes
+from xgboost import XGBClassifier
+
 
 logger = logging.getLogger(__name__)
 
