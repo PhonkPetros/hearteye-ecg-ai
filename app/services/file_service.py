@@ -116,39 +116,38 @@ class FileHandlingService:
             return sanitized or "default_record_name"
 
         try:
-            # 1. Validate EDF file existence
+            # Validate EDF file existence
             if not os.path.exists(edf_path):
                 logger.warning(f"EDF file not found: {edf_path}")
                 raise FileNotFoundError(f"EDF file not found: {edf_path}")
 
-            # 2. Determine output directory and ensure it exists
+            # Determine output directory and ensure it exists
             if output_dir is None:
                 output_dir = os.path.dirname(edf_path)
             os.makedirs(output_dir, exist_ok=True)
             logger.debug(f"Ensuring output directory for WFDB is: {output_dir}")
 
-            # 3. Prepare WFDB record name
+            # Prepare WFDB record name
             filename_base = os.path.splitext(os.path.basename(edf_path))[0]
             record_name = sanitize_filename(filename_base)
             full_output_wfdb_path = os.path.join(output_dir, record_name)
 
-            # 4. Read EDF data using pyedflib
+            # Read EDF data using pyedflib
             edf_reader = pyedflib.EdfReader(edf_path)
             num_signals = edf_reader.signals_in_file
             
-            # Get sampling frequency from the first signal (assuming consistent fs across signals)
-            # You might want to add a check here if sample frequencies vary
+            # Get sampling frequency from the first signal
             fs = edf_reader.getSampleFrequency(0)
             signal_labels = edf_reader.getSignalLabels()
 
             # Read all signals into a list of numpy arrays
             signals = [edf_reader.readSignal(i) for i in range(num_signals)]
-            edf_reader.close() # Close the EDF file immediately after reading
-            del edf_reader # Release the file handle
+            edf_reader.close()
+            del edf_reader 
 
             logger.debug(f"EDF file '{edf_path}' read successfully. Found {num_signals} signals.")
 
-            # 5. Process signals based on short_signal_handling strategy
+            # Process signals based on short_signal_handling strategy
             max_len = max(len(s) for s in signals)
             processed_signals = []
 
@@ -186,9 +185,7 @@ class FileHandlingService:
                 processed_signals = [s[:min_len] for s in signals]
                 logger.info(f"Signals trimmed to length: {min_len} samples ({min_len/fs:.2f} seconds) due to invalid option.")
 
-            # 6. Save data as WFDB format
-            # np.column_stack is used to combine the list of 1D signal arrays into a 2D array
-            # where each column is a signal, which is the expected format for p_signal.
+            #Save data as WFDB format
             wfdb.wrsamp(
                 record_name=record_name,
                 fs=fs,
