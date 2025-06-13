@@ -89,6 +89,7 @@ class PredictionService:
             
             # Convert dictionary to DataFrame for prediction
             df = pd.DataFrame([feature_dict])
+            df = df.apply(pd.to_numeric, errors='coerce')
 
             # Check for missing features required by the model
             missing_features = set(expected_features) - set(df.columns)

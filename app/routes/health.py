@@ -31,32 +31,6 @@ def health_check():
         db_status = f"unhealthy: {str(e)}"
         logger.error(f"Database health check failed: {e}", exc_info=True) # Log full traceback
 
-    # --- Filesystem Health Check ---
-    upload_dir = os.environ.get("UPLOAD_DIR", "/app/uploads")
-    wfdb_dir = os.environ.get("WFDB_DIR", "/app/wfdb")
-    plots_dir = os.environ.get("PLOTS_DIR", "/app/plots")
-    
-    logger.debug(f"Checking filesystem directories: UPLOAD_DIR='{upload_dir}', WFDB_DIR='{wfdb_dir}', PLOTS_DIR='{plots_dir}'.")
-
-    missing_dirs = []
-    # Check for existence of each directory
-    if not os.path.exists(upload_dir):
-        missing_dirs.append(upload_dir)
-        logger.warning(f"Upload directory '{upload_dir}' is missing.")
-    if not os.path.exists(wfdb_dir):
-        missing_dirs.append(wfdb_dir)
-        logger.warning(f"WFDB directory '{wfdb_dir}' is missing.")
-    if not os.path.exists(plots_dir):
-        missing_dirs.append(plots_dir)
-        logger.warning(f"Plots directory '{plots_dir}' is missing.")
-
-    if missing_dirs:
-        fs_status = f"unhealthy: missing directories {', '.join(missing_dirs)}"
-        logger.error(f"Filesystem health check failed, missing directories: {missing_dirs}.")
-    else:
-        fs_status = "healthy"
-        logger.info("Filesystem health check passed.")
-
     # --- Overall Status Determination ---
     if db_status == "healthy" and fs_status == "healthy":
         overall_status = "healthy"
@@ -65,16 +39,16 @@ def health_check():
     else:
         overall_status = "unhealthy"
         response_code = 503
-        logger.warning(f"Overall health status: UNHEALTHY. Database: {db_status}, Filesystem: {fs_status}.")
+        logger.warning(f"Overall health status: UNHEALTHY. Database: {db_status}")
 
     return (
         jsonify(
             {
                 "status": overall_status,
                 "timestamp": datetime.utcnow().isoformat(),
-                "version": "1.0.0", # Assuming a fixed version for this example
-                "services": {"database": db_status, "filesystem": fs_status},
-                "uptime": "running", # Placeholder; actual uptime calculation might be more complex
+                "version": "1.0.0", 
+                "services": {"database": db_status},
+                "uptime": "running",
             }
         ),
         response_code,
@@ -98,7 +72,5 @@ def readiness_check():
 def liveness_check():
     """Liveness check for Kubernetes/container orchestration"""
     logger.info("Liveness check requested.")
-    # For a liveness check, we typically just verify the application process is running and responsive.
-    # No complex external dependencies checks are usually performed here.
     logger.debug("Application process is alive and responsive.")
     return jsonify({"status": "alive"}), 200

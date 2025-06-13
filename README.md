@@ -80,11 +80,11 @@ This pipeline ensures that raw, noisy, and variably-sampled ECG data is transfor
 ```bash
 git clone <your-repo-url>
 cd project
+```
 
-2. Set Up Environment
-
-If you do not have access to the .env file, create a .env file with the following variables:
-
+### 2. Set Up Environment
+If you do not have access to the .env file, create a `.env` file with the following variables:
+```bash
 JWT_SECRET_KEY
 SECRET_KEY
 CORS_ORIGINS
@@ -99,17 +99,21 @@ AZURE_RESOURCE_GROUP
 AZURE_CONTAINER_NAME
 AZURE_REGISTRY_USERNAME
 AZURE_REGISTRY_PASSWORD
+```
 
-3. Install Dependencies
+### 3. Install Dependencies
+```bash
 
 pip install -r requirements.txt
+```
 
-4. Run the App using Docker
-
+### 4. Run the App using Docker
+```bash
 docker build -t hearteye-backend .
 docker-compose up
+```
 
-Redeployment Instructions for HeartEye ECG AI Backend
+## Redeployment Instructions for HeartEye ECG AI Backend
 
 This document provides step-by-step instructions for redeploying the HeartEye ECG AI Backend application using Azure Container Instances and Docker.
 Prerequisites
@@ -128,25 +132,32 @@ Before you start, ensure the following:
 
     You have docker deamon running.
 
-Redeployment steps
-1. Log in to Azure
+## Redeployment steps
+### 1. Log in to Azure
 
 Open your bash terminal and log in to Azure CLI:
-
+```bash
 az login
+```
 
 This will open a browser window for authentication. Complete the login process.
 
 You will be prompted to select a subscription. Please select: Keuzeonderwijs jaar 4
-2. Run the deployment script
+
+### 2. Run the deployment script
 
 Note: Make sure you are in the root directory of the repository where the deploy.sh script and .env file are located before running the commands.
 
 Make the script executable:
-
+```bash
 chmod +x deploy.sh
+```
 
 Then run the script:
-
+```bash
 ./deploy.sh
+```
 
+## API Documentation
+The full API documentation can is included as a SwaggerUI file called index.html in the docs/swagger-ui folder.
+The most relevant endpoint for using just the prediction part would be the /predict endpoint that accepts Form data including, patient name, gender, age and a zip file containing either one .edf file or one .dat and .hea file.
