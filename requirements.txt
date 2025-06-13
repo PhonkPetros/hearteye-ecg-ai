@@ -25,3 +25,4 @@ python-json-logger
 storage3
 marshmallow
 xgboost
+shap
