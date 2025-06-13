@@ -23,7 +23,7 @@ cd project
 
 ### 2. Set Up Environment
 If you do not have access to the .env file, create a `.env` file with the following variables:
-```env
+```bash
 JWT_SECRET_KEY
 SECRET_KEY
 CORS_ORIGINS
@@ -88,3 +88,7 @@ Then run the script:
 ````bash
 ./deploy.sh
 ````
+
+## API Documentation
+The full API documentation can is included as a SwaggerUI file called index.html in the docs/swagger-ui folder.
+The most relevant endpoint for using just the prediction part would be the /predict endpoint that accepts Form data including, patient name, gender, age and a zip file containing either one .edf file or one .dat and .hea file.

@@ -121,4 +121,4 @@ shap.plots.beeswarm(shap_values)
 
 # === Save model ===
 os.makedirs("models", exist_ok=True)
-joblib.dump(best_xgb, "models/xgb_rr_hr_optimized_model.pkl")
+joblib.dump(best_xgb, "models/xgb_rr_hr_optimized_model_v2.pkl")

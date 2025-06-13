@@ -25,7 +25,6 @@ class UserRegisterSchema(Schema):
     password = fields.String(required=True, validate=validate.Length(min=4, error="Password must be at least 4 characters long."))
 
 
-
 class UserLoginSchema(Schema):
     username = fields.String(required=True, validate=validate.Length(min=1))
     password = fields.String(required=True, validate=validate.Length(min=4))
